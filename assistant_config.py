@@ -1,2 +1,2 @@
 ASSISTANT_ID = "asst_faNNrSBJG4iJAyqroxHzuwR6"
-THREAD_ID = "your-shared-thread-id-here"
+THREAD_ID = "thread_G6ptoRQ5MDYPJw3lYAToZ9dT"
