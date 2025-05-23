@@ -1,2 +1,2 @@
-ASSISTANT_ID = "asst_faNNrSBJG4iJAyqroxHzuwR6"
-THREAD_ID = "thread_G6ptoRQ5MDYPJw3lYAToZ9dT"
+ASSISTANT_ID =asst_faNNrSBJG4iJAyqroxHzuwR6
+THREAD_ID =thread_G6ptoRQ5MDYPJw3lYAToZ9dT
