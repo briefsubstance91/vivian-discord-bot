@@ -1,7 +1,11 @@
-import os
 from dotenv import load_dotenv
+import os
 
-load_dotenv()  # Must be called before using os.getenv()
+load_dotenv()
 
-ASSISTANT_ID = os.getenv("asst_faNNrSBJG4iJAyqroxHzuwR6")
-THREAD_ID = os.getenv("thread_G6ptoRQ5MDYPJw3lYAToZ9dT")
+ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+THREAD_ID = os.getenv("THREAD_ID")
+
+print(f"🔧 Loaded ASSISTANT_ID: {ASSISTANT_ID}")
+print(f"🔧 Loaded THREAD_ID: {THREAD_ID}")
+
