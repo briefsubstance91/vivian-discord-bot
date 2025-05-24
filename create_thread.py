@@ -1,10 +1,9 @@
-import openai
-import os
+from openai import OpenAI
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 
-response = openai.Thread.create()
-print("✅ New Thread ID:", response["id"])
-
+response = client.beta.threads.create()
+print("✅ New Thread ID:", response.id)
