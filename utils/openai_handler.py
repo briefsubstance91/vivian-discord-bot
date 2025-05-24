@@ -1,25 +1,25 @@
-import json
-import os
 from openai import OpenAI
+import os
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
+client = OpenAI()
+
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 THREAD_ID = os.getenv("THREAD_ID")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+print(f"🔧 Loaded ASSISTANT_ID: {ASSISTANT_ID}")
+print(f"🔧 Loaded THREAD_ID: {THREAD_ID}")
 
 async def get_openai_response(user_message: str) -> str:
     if not ASSISTANT_ID or not THREAD_ID:
-        error_msg = "Missing ASSISTANT_ID or THREAD_ID from environment."
-        print(f"❌ {error_msg}")
-        return error_msg
+        return "❌ Missing ASSISTANT_ID or THREAD_ID in environment."
 
     try:
         print(f"📨 Sending message to OpenAI Assistant (Thread: {THREAD_ID})")
-        
+
         message = client.beta.threads.messages.create(
             thread_id=THREAD_ID,
             role="user",
@@ -33,44 +33,28 @@ async def get_openai_response(user_message: str) -> str:
         )
         print(f"🏃 Run created: {run.id}")
 
+        # Wait for run to complete
         while True:
-            status = client.beta.threads.runs.retrieve(run.id, thread_id=THREAD_ID)
-            print(f"🔄 Run status: {status.status}")
-
-            if status.status == "completed":
+            run_status = client.beta.threads.runs.retrieve(thread_id=THREAD_ID, run_id=run.id)
+            print(f"🔄 Run status: {run_status.status}")
+            if run_status.status == "completed":
                 break
-            elif status.status == "requires_action":
-                tool_calls = status.required_action.submit_tool_outputs.tool_calls
-                tool_outputs = []
+            elif run_status.status == "requires_action":
+                return "❌ Assistant needs action from tool call (not yet supported in this version)."
+            time.sleep(1)
 
-                for tool_call in tool_calls:
-                    tool_name = tool_call.function.name
-                    arguments = json.loads(tool_call.function.arguments)
+        # Retrieve messages and find response from current run
+        messages = client.beta.threads.messages.list(thread_id=THREAD_ID, limit=10)
 
-                    print(f"🛠️ Tool requested: {tool_name} with args {arguments}")
-                    dummy_output = f"Tool `{tool_name}` was called with arguments {arguments}"
-                    
-                    tool_outputs.append({
-                        "tool_call_id": tool_call.id,
-                        "output": dummy_output
-                    })
+        for msg in messages.data:
+            if msg.role == "assistant" and msg.run_id == run.id:
+                response_text = msg.content[0].text.value
+                print(f"✅ Got response: {response_text}")
+                return response_text
 
-                client.beta.threads.runs.submit_tool_outputs(
-                    thread_id=THREAD_ID,
-                    run_id=run.id,
-                    tool_outputs=tool_outputs
-                )
-
-        messages = client.beta.threads.messages.list(thread_id=THREAD_ID)
-        for msg in reversed(messages.data):
-            if msg.role == "assistant":
-                reply_text = msg.content[0].text.value
-                print(f"✅ Got response: {reply_text}")
-                return reply_text
-
-        return "Vivian had no reply."
+        return "❌ No assistant reply found."
 
     except Exception as e:
-        error_msg = f"❌ OpenAI error: {e}"
+        error_msg = f"❌ An error occurred: {e}"
         print(error_msg)
-        return f"Vivian crashed: {e}"
+        return error_msg
