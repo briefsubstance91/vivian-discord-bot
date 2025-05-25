@@ -1,65 +1,56 @@
 import os
-import time
-import openai
+import asyncio
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 THREAD_ID = os.getenv("THREAD_ID")
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 async def get_openai_response(user_message: str) -> str:
-    if not ASSISTANT_ID or not THREAD_ID:
-        return "❌ ASSISTANT_ID or THREAD_ID not set."
-
     try:
         print(f"📨 Sending message to OpenAI Assistant (Thread: {THREAD_ID})")
-
-        # Check for active runs
-        existing_runs = openai.beta.threads.runs.list(thread_id=THREAD_ID).data
-        if any(run.status in ["queued", "in_progress", "requires_action"] for run in existing_runs):
-            return "⏳ Assistant is still processing a previous request. Please wait."
-
-        # Add user message to thread
-        message = openai.beta.threads.messages.create(
+        message = client.beta.threads.messages.create(
             thread_id=THREAD_ID,
             role="user",
             content=user_message
         )
         print(f"✅ Message added to thread: {message.id}")
 
-        # Create a new run
-        run = openai.beta.threads.runs.create(
+        run = client.beta.threads.runs.create(
             thread_id=THREAD_ID,
             assistant_id=ASSISTANT_ID
         )
         print(f"🏃 Run created: {run.id}")
 
-        # Poll run status
-        while True:
-            run_status = openai.beta.threads.runs.retrieve(
+        for _ in range(30):  # Wait up to ~30 seconds
+            run_status = client.beta.threads.runs.retrieve(
                 thread_id=THREAD_ID,
                 run_id=run.id
             )
             print(f"🔄 Run status: {run_status.status}")
+
             if run_status.status == "completed":
                 break
-            elif run_status.status in ["failed", "cancelled"]:
-                return f"❌ Assistant failed to complete run (status: {run_status.status})"
-            time.sleep(1)
+            elif run_status.status == "failed":
+                raise Exception("❌ Run failed.")
+            elif run_status.status == "requires_action":
+                raise Exception("⚠️ Run requires action (not handled).")
+            await asyncio.sleep(1)
+        else:
+            raise TimeoutError("⏱️ Timed out waiting for assistant to complete.")
 
-        # Fetch the last assistant message
-        messages = openai.beta.threads.messages.list(thread_id=THREAD_ID)
+        messages = client.beta.threads.messages.list(thread_id=THREAD_ID)
         for msg in reversed(messages.data):
             if msg.role == "assistant":
-                reply = msg.content[0].text.value
-                print(f"✅ Got response: {reply}")
-                return reply
+                print(f"✅ Got response: {msg.content[0].text.value}")
+                return msg.content[0].text.value
 
-        return "❌ No assistant reply found."
+        return "⚠️ No assistant response found."
 
-    except openai.OpenAIError as e:
-        return f"❌ OpenAI error: {str(e)}"
     except Exception as e:
-        return f"❌ Unexpected error: {str(e)}"
+        print(f"❌ An error occurred: {e}")
+        return "An error occurred while communicating with the assistant."
