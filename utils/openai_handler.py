@@ -160,6 +160,27 @@ def execute_function(function_name, arguments):
         
         return "📅 Today's Schedule:\n" + "\n".join(event_list)
     
+    elif function_name == "get_tomorrow_schedule":
+        tomorrow = datetime.now() + timedelta(days=1)
+        tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
+        
+        # Get tomorrow's events specifically
+        events = get_caldav_events_for_date(caldav_calendar, tomorrow_start, tomorrow_end)
+        
+        if not events:
+            return "No events scheduled for tomorrow"
+        
+        event_list = []
+        for event in events:
+            if hasattr(event['start_time'], 'strftime'):
+                time_str = event['start_time'].strftime('%I:%M %p')
+            else:
+                time_str = str(event['start_time'])
+            event_list.append(f"• {time_str}: {event['title']} ({event['duration']})")
+        
+        return "📅 Tomorrow's Schedule:\n" + "\n".join(event_list)
+    
     elif function_name == "get_upcoming_events":
         days = arguments.get('days', 7)
         events = get_caldav_events(caldav_calendar, days_ahead=days)
@@ -229,6 +250,64 @@ def execute_function(function_name, arguments):
     
     else:
         return f"Unknown function: {function_name}"
+
+def get_caldav_events_for_date(calendar, start_date, end_date):
+    """Get events for a specific date range"""
+    if not calendar:
+        return []
+    
+    try:
+        print(f"📅 Fetching events from {start_date.date()} to {end_date.date()}")
+        
+        # Search for events in date range
+        events = calendar.search(
+            start=start_date,
+            end=end_date,
+            event=True,
+            expand=True
+        )
+        
+        calendar_events = []
+        
+        for event in events:
+            try:
+                # Parse the iCalendar data
+                cal_data = Calendar.from_ical(event.data)
+                
+                for component in cal_data.walk():
+                    if component.name == "VEVENT":
+                        summary = str(component.get('summary', 'Untitled'))
+                        dtstart = component.get('dtstart')
+                        dtend = component.get('dtend')
+                        
+                        if dtstart and dtstart.dt:
+                            start_time = dtstart.dt
+                            
+                            # Handle timezone-aware datetime
+                            if hasattr(start_time, 'replace'):
+                                # Calculate duration
+                                if dtend and dtend.dt:
+                                    duration = dtend.dt - start_time
+                                    duration_str = f"{int(duration.total_seconds() / 60)} min"
+                                else:
+                                    duration_str = "Unknown"
+                                
+                                calendar_events.append({
+                                    "title": summary,
+                                    "start_time": start_time,
+                                    "duration": duration_str
+                                })
+                                
+            except Exception as e:
+                print(f"⚠️ Error parsing event: {e}")
+                continue
+        
+        print(f"✅ Found {len(calendar_events)} calendar events for date range")
+        return calendar_events
+        
+    except Exception as e:
+        print(f"❌ Error fetching CalDAV events for date range: {e}")
+        return []
 
 async def handle_function_calls(run, thread_id):
     """Handle function calls from the assistant"""
