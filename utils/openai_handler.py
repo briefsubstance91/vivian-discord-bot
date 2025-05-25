@@ -157,6 +157,11 @@ async def retry_with_context(thread_id, original_message):
 
 async def get_openai_response(user_message: str, user_id: int) -> str:
     try:
+        # TEMPORARY FIX: Force new thread every message to avoid caching issues
+        # This ensures each question gets a fresh response instead of cached answers
+        # Remove this line once OpenAI fixes their caching behavior
+        user_threads.clear()
+        
         # Get or create thread for this specific user (NOT static thread)
         thread_data = get_or_create_thread(user_id)
         thread_id = thread_data['id']
