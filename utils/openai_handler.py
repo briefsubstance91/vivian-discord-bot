@@ -5,6 +5,8 @@ from openai import OpenAI
 from datetime import datetime, timedelta
 from caldav import DAVClient
 from icalendar import Calendar
+import requests
+from requests.auth import HTTPBasicAuth
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
@@ -12,8 +14,54 @@ ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 # Store user threads in memory
 user_threads = {}
 
+def debug_caldav_connection():
+    """Debug CalDAV connection issues"""
+    email = os.getenv('GOOGLE_EMAIL')
+    app_password = os.getenv('GOOGLE_APP_PASSWORD')
+    
+    print(f"🔧 Debug CalDAV Connection:")
+    print(f"   Email: {email}")
+    print(f"   Password: {'*' * len(app_password) if app_password else 'None'}")
+    
+    if not email:
+        print("❌ GOOGLE_EMAIL environment variable not set")
+        return False
+    
+    if not app_password:
+        print("❌ GOOGLE_APP_PASSWORD environment variable not set")
+        return False
+    
+    if len(app_password) != 16:
+        print(f"⚠️ App password length is {len(app_password)}, should be 16 characters")
+    
+    # Test the CalDAV URL
+    caldav_url = f"https://apidata.googleusercontent.com/caldav/v2/{email}/events/"
+    print(f"🔗 CalDAV URL: {caldav_url}")
+    
+    try:
+        # Test basic auth
+        response = requests.get(caldav_url, auth=HTTPBasicAuth(email, app_password), timeout=10)
+        print(f"📡 HTTP Response: {response.status_code}")
+        
+        if response.status_code == 401:
+            print("❌ Authentication failed - check email/password")
+        elif response.status_code == 200:
+            print("✅ Basic auth working")
+        else:
+            print(f"⚠️ Unexpected response: {response.status_code}")
+            
+    except Exception as e:
+        print(f"❌ Connection test failed: {e}")
+    
+    return True
+
 def setup_caldav_calendar():
-    """Setup CalDAV connection to Google Calendar"""
+    """Setup CalDAV connection to Google Calendar with enhanced debugging"""
+    
+    # Add debug call
+    if not debug_caldav_connection():
+        return None
+    
     try:
         email = os.getenv('GOOGLE_EMAIL')
         app_password = os.getenv('GOOGLE_APP_PASSWORD')
@@ -26,6 +74,8 @@ def setup_caldav_calendar():
         # Google's CalDAV URL
         caldav_url = f"https://apidata.googleusercontent.com/caldav/v2/{email}/events/"
         
+        print(f"🔗 Attempting CalDAV connection to: {caldav_url}")
+        
         # Create DAV client
         client_dav = DAVClient(
             url=caldav_url,
@@ -33,19 +83,36 @@ def setup_caldav_calendar():
             password=app_password
         )
         
+        print("🔧 DAV Client created, getting principal...")
+        
         # Get principal and calendars
         principal = client_dav.principal()
+        print("🔧 Principal obtained, getting calendars...")
+        
         calendars = principal.calendars()
+        print(f"🔧 Found {len(calendars)} calendars")
         
         if calendars:
             print("✅ CalDAV Google Calendar connected successfully")
-            return calendars[0]  # Use primary calendar
+            calendar = calendars[0]
+            
+            # Test getting events
+            print("🔧 Testing event retrieval...")
+            test_events = calendar.search(
+                start=datetime.now(),
+                end=datetime.now() + timedelta(days=1),
+                event=True
+            )
+            print(f"🔧 Test search returned {len(test_events)} events")
+            
+            return calendar
         else:
             print("❌ No calendars found via CalDAV")
             return None
             
     except Exception as e:
         print(f"❌ CalDAV setup failed: {e}")
+        print(f"❌ Error type: {type(e).__name__}")
         print("💡 Make sure you have 2FA enabled and created an app password")
         return None
 
