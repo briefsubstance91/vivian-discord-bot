@@ -1,9 +1,6 @@
 import discord
 import os
-from dotenv import load_dotenv
 from utils.openai_handler import get_openai_response
-
-load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -32,8 +29,8 @@ async def on_message(message):
     # Show typing indicator
     async with message.channel.typing():
         try:
-            # Get response from OpenAI Assistant
-            reply = await get_openai_response(message.content)
+            # Get response from OpenAI Assistant - pass user ID for per-user threads
+            reply = await get_openai_response(message.content, user_id=message.author.id)
             
             # Discord has a 2000 character limit for messages
             if len(reply) > 2000:
