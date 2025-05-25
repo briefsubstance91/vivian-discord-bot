@@ -3,6 +3,8 @@ import asyncio
 import json
 from openai import OpenAI
 from datetime import datetime, timedelta
+from caldav import DAVClient
+from icalendar import Calendar
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
@@ -10,9 +12,108 @@ ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 # Store user threads in memory
 user_threads = {}
 
-# Mock calendar data (replace with real calendar integration later)
+def setup_caldav_calendar():
+    """Setup CalDAV connection to Google Calendar"""
+    try:
+        email = os.getenv('GOOGLE_EMAIL')
+        app_password = os.getenv('GOOGLE_APP_PASSWORD')
+        
+        if not email or not app_password:
+            print("⚠️ No CalDAV credentials found - using mock data")
+            print("ℹ️ Add GOOGLE_EMAIL and GOOGLE_APP_PASSWORD environment variables")
+            return None
+        
+        # Google's CalDAV URL
+        caldav_url = f"https://apidata.googleusercontent.com/caldav/v2/{email}/events/"
+        
+        # Create DAV client
+        client_dav = DAVClient(
+            url=caldav_url,
+            username=email,
+            password=app_password
+        )
+        
+        # Get principal and calendars
+        principal = client_dav.principal()
+        calendars = principal.calendars()
+        
+        if calendars:
+            print("✅ CalDAV Google Calendar connected successfully")
+            return calendars[0]  # Use primary calendar
+        else:
+            print("❌ No calendars found via CalDAV")
+            return None
+            
+    except Exception as e:
+        print(f"❌ CalDAV setup failed: {e}")
+        print("💡 Make sure you have 2FA enabled and created an app password")
+        return None
+
+def get_caldav_events(calendar, days_ahead=1):
+    """Get events from CalDAV calendar"""
+    if not calendar:
+        print("📅 Using mock calendar data (no CalDAV connection)")
+        return get_mock_calendar_events()
+    
+    try:
+        # Get date range
+        start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=days_ahead)
+        
+        print(f"📅 Fetching events from {start.date()} to {end.date()}")
+        
+        # Search for events
+        events = calendar.search(
+            start=start,
+            end=end,
+            event=True,
+            expand=True
+        )
+        
+        calendar_events = []
+        
+        for event in events:
+            try:
+                # Parse the iCalendar data
+                cal_data = Calendar.from_ical(event.data)
+                
+                for component in cal_data.walk():
+                    if component.name == "VEVENT":
+                        summary = str(component.get('summary', 'Untitled'))
+                        dtstart = component.get('dtstart')
+                        dtend = component.get('dtend')
+                        
+                        if dtstart and dtstart.dt:
+                            start_time = dtstart.dt
+                            
+                            # Handle timezone-aware datetime
+                            if hasattr(start_time, 'replace'):
+                                # Calculate duration
+                                if dtend and dtend.dt:
+                                    duration = dtend.dt - start_time
+                                    duration_str = f"{int(duration.total_seconds() / 60)} min"
+                                else:
+                                    duration_str = "Unknown"
+                                
+                                calendar_events.append({
+                                    "title": summary,
+                                    "start_time": start_time,
+                                    "duration": duration_str
+                                })
+                                
+            except Exception as e:
+                print(f"⚠️ Error parsing event: {e}")
+                continue
+        
+        print(f"✅ Found {len(calendar_events)} calendar events")
+        return calendar_events if calendar_events else get_mock_calendar_events()
+        
+    except Exception as e:
+        print(f"❌ Error fetching CalDAV events: {e}")
+        return get_mock_calendar_events()
+
 def get_mock_calendar_events():
-    """Mock calendar data - you can replace this with real calendar API later"""
+    """Mock calendar data - fallback when no real calendar available"""
     today = datetime.now()
     
     mock_events = [
@@ -22,7 +123,7 @@ def get_mock_calendar_events():
             "duration": "30 min"
         },
         {
-            "title": "Strategy Review",
+            "title": "Strategy Review", 
             "start_time": today.replace(hour=14, minute=0),
             "duration": "1 hour"
         },
@@ -35,52 +136,96 @@ def get_mock_calendar_events():
     
     return mock_events
 
+# Initialize CalDAV calendar
+print("🔧 Setting up CalDAV calendar connection...")
+caldav_calendar = setup_caldav_calendar()
+
 def execute_function(function_name, arguments):
     """Execute the called function and return results"""
     
     if function_name == "get_today_schedule":
-        events = get_mock_calendar_events()
+        events = get_caldav_events(caldav_calendar, days_ahead=1)
         
         if not events:
             return "No events scheduled for today"
         
         event_list = []
         for event in events:
-            time_str = event['start_time'].strftime('%I:%M %p')
+            # Handle both timezone-aware and naive datetime
+            if hasattr(event['start_time'], 'strftime'):
+                time_str = event['start_time'].strftime('%I:%M %p')
+            else:
+                time_str = str(event['start_time'])
             event_list.append(f"• {time_str}: {event['title']} ({event['duration']})")
         
-        return "Today's Schedule:\n" + "\n".join(event_list)
+        return "📅 Today's Schedule:\n" + "\n".join(event_list)
     
     elif function_name == "get_upcoming_events":
         days = arguments.get('days', 7)
-        events = get_mock_calendar_events()  # In real version, fetch for date range
+        events = get_caldav_events(caldav_calendar, days_ahead=days)
         
         if not events:
             return f"No events found in the next {days} days"
         
         event_list = []
+        today = datetime.now().date()
+        
         for event in events:
-            if event['start_time'].date() == datetime.now().date():
+            event_date = event['start_time'].date() if hasattr(event['start_time'], 'date') else today
+            
+            if event_date == today:
                 time_str = f"Today at {event['start_time'].strftime('%I:%M %p')}"
+            elif event_date == today + timedelta(days=1):
+                time_str = f"Tomorrow at {event['start_time'].strftime('%I:%M %p')}"
             else:
                 time_str = event['start_time'].strftime('%m/%d at %I:%M %p')
             
             event_list.append(f"• {event['title']} - {time_str}")
         
-        return f"Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
+        return f"📅 Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
     
     elif function_name == "find_free_time":
         duration = arguments.get('duration', 60)
         date = arguments.get('date', datetime.now().strftime('%Y-%m-%d'))
         
-        # Mock free time logic
-        free_slots = [
-            "10:00 AM - 11:30 AM",
-            "2:00 PM - 3:00 PM", 
-            "4:30 PM - 6:00 PM"
-        ]
+        events = get_caldav_events(caldav_calendar, days_ahead=1)
         
-        return f"Free time slots on {date} (for {duration} min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
+        # Simple free time logic
+        free_slots = []
+        
+        # Business hours (9 AM to 6 PM)
+        start_hour = 9
+        end_hour = 18
+        
+        # Sort events by time
+        events.sort(key=lambda x: x['start_time'])
+        
+        current_time = datetime.now().replace(hour=start_hour, minute=0)
+        end_of_day = datetime.now().replace(hour=end_hour, minute=0)
+        
+        for event in events:
+            event_start = event['start_time']
+            
+            # Check if there's a gap before this event
+            if current_time < event_start:
+                gap_minutes = (event_start - current_time).total_seconds() / 60
+                if gap_minutes >= duration:
+                    free_slots.append(f"{current_time.strftime('%I:%M %p')} - {event_start.strftime('%I:%M %p')}")
+            
+            # Move current time to after this event (assume 1 hour if duration unknown)
+            event_end = event_start + timedelta(hours=1)
+            current_time = max(current_time, event_end)
+        
+        # Check time after last event
+        if current_time < end_of_day:
+            gap_minutes = (end_of_day - current_time).total_seconds() / 60
+            if gap_minutes >= duration:
+                free_slots.append(f"{current_time.strftime('%I:%M %p')} - {end_of_day.strftime('%I:%M %p')}")
+        
+        if not free_slots:
+            free_slots = ["No significant free blocks found"]
+        
+        return f"⏰ Free time slots on {date} ({duration}+ min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
     
     else:
         return f"Unknown function: {function_name}"
@@ -255,8 +400,7 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
                 continue
             elif run_status.status == "failed":
                 raise Exception("❌ Run failed.")
-            elif run_status.status == "requires_action":
-                raise Exception("⚠️ Run requires action (not handled).")
+            
             await asyncio.sleep(1)
         else:
             raise TimeoutError("⏱️ Timed out waiting for assistant to complete.")
