@@ -38,31 +38,56 @@ def get_or_create_thread(user_id):
     
     return user_threads[thread_key]
 
-def format_for_discord(response):
+def should_give_detailed_response(user_message):
+    """Check if user is asking for a detailed/comprehensive response"""
+    detail_triggers = [
+        'deep dive', 'detailed', 'comprehensive', 'tell me more', 'elaborate',
+        'break it down', 'full breakdown', 'in depth', 'thorough', 'complete',
+        'everything about', 'walk me through', 'explain fully'
+    ]
+    
+    return any(trigger in user_message.lower() for trigger in detail_triggers)
+
+def format_for_discord(response, is_detailed=False):
     """Clean up response for Discord formatting"""
     
     # Remove excessive line breaks
     response = response.replace('\n\n\n', '\n\n')
     response = response.replace('\n\n\n\n', '\n\n')
     
-    # Remove excessive spacing around numbered lists
-    response = response.replace('\n\n1.', '\n1.')
-    response = response.replace('\n\n2.', '\n2.')
-    response = response.replace('\n\n3.', '\n3.')
-    response = response.replace('\n\n4.', '\n4.')
-    response = response.replace('\n\n5.', '\n5.')
-    response = response.replace('\n\n6.', '\n6.')
+    # Remove bold from every concept (too much bolding)
+    bold_count = response.count('**')
+    if bold_count > 6:  # More than 3 bold phrases
+        # Keep only the first 2 bold phrases
+        parts = response.split('**')
+        new_response = parts[0]
+        bold_used = 0
+        for i in range(1, len(parts)):
+            if bold_used < 4:  # Keep first 2 bold phrases (4 asterisks)
+                new_response += '**' + parts[i]
+                bold_used += 1
+            else:
+                new_response += parts[i]
+        response = new_response
     
-    # Limit to Discord's comfort zone (under 1800 chars to avoid truncation)
-    if len(response) > 1800:
+    # Different length limits based on detail level
+    if is_detailed:
+        max_length = 3000  # Allow longer responses when details requested
+    else:
+        max_length = 1200  # Keep casual responses tight
+    
+    if len(response) > max_length:
         # Find a good breaking point
         sentences = response.split('. ')
         truncated = ""
         for sentence in sentences:
-            if len(truncated + sentence + '. ') < 1700:
+            if len(truncated + sentence + '. ') < (max_length - 100):
                 truncated += sentence + '. '
             else:
-                truncated += "\n\n*Want me to dive deeper into any of these areas?*"
+                if is_detailed:
+                    truncated += "\n\n*This is just the foundation - want me to go deeper on any specific aspect?*"
+                else:
+                    truncated += "\n\n*Want the detailed breakdown?*"
                 break
         response = truncated
     
@@ -152,13 +177,16 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
         thread_data['message_count'] += 1
         print(f"✅ Message added to thread: {message.id}")
         
-        # Create run with explicit Vivian Spencer instructions optimized for Discord
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=ASSISTANT_ID,
-            instructions="You are Vivian Spencer, the user's strategist and style architect. Respond conversationally in under 1500 characters. No numbered lists - weave insights into flowing paragraphs. End with a strategic question or insight.",
-            additional_instructions="This is Discord - sound like you're having coffee with a trusted client, not writing a formal report. Use **bold** for 2-3 key concepts maximum."
-        )
+        # Check if user wants detailed response
+        wants_detail = should_give_detailed_response(clean_message)
+        
+        # Create run with dynamic instructions based on request type
+        if wants_detail:
+            instructions = "You are Vivian Spencer. The user wants comprehensive details. Provide thorough strategic analysis while maintaining your conversational tone. You can go longer when depth is requested."
+            additional = "Give detailed insights with specific examples and strategic implications. This is a deep-dive request."
+        else:
+            instructions = "You are Vivian Spencer. Keep this conversational and concise (800-1200 chars). No lists or bullet points - weave insights into natural conversation like you're texting a strategic friend."
+            additional = "Sound casual and strategic, not formal. One or two **bold** concepts max. End with insight, not generic questions."
         
         print(f"🏃 Run created: {run.id}")
         
