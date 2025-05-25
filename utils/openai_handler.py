@@ -187,6 +187,13 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
         else:
             instructions = "You are Vivian Spencer. Keep this conversational and concise (800-1200 chars). No lists or bullet points - weave insights into natural conversation like you're texting a strategic friend."
             additional = "Sound casual and strategic, not formal. One or two **bold** concepts max. End with insight, not generic questions."
+
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID,
+            instructions=instructions,
+            additional_instructions=additional
+        )
         
         print(f"🏃 Run created: {run.id}")
         
@@ -221,7 +228,7 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
                     recovery_response = await retry_with_context(thread_id, clean_message)
                     if recovery_response:
                         print("✅ Recovery successful")
-                        return format_for_discord(recovery_response)
+                        return format_for_discord(recovery_response, wants_detail)
                     else:
                         return "I seem to be having technical difficulties. Could you rephrase your question about communications strategy?"
                 
@@ -231,10 +238,10 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
                     recovery_response = await retry_with_context(thread_id, clean_message)
                     if recovery_response:
                         print("✅ Recovery successful - more conversational")
-                        return format_for_discord(recovery_response)
+                        return format_for_discord(recovery_response, wants_detail)
                 
-                # Apply Discord formatting
-                return format_for_discord(response)
+                # Apply Discord formatting and return
+                return format_for_discord(response, wants_detail)
         
         return "⚠️ No assistant response found."
         
