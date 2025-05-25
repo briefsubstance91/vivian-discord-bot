@@ -38,6 +38,36 @@ def get_or_create_thread(user_id):
     
     return user_threads[thread_key]
 
+def format_for_discord(response):
+    """Clean up response for Discord formatting"""
+    
+    # Remove excessive line breaks
+    response = response.replace('\n\n\n', '\n\n')
+    response = response.replace('\n\n\n\n', '\n\n')
+    
+    # Remove excessive spacing around numbered lists
+    response = response.replace('\n\n1.', '\n1.')
+    response = response.replace('\n\n2.', '\n2.')
+    response = response.replace('\n\n3.', '\n3.')
+    response = response.replace('\n\n4.', '\n4.')
+    response = response.replace('\n\n5.', '\n5.')
+    response = response.replace('\n\n6.', '\n6.')
+    
+    # Limit to Discord's comfort zone (under 1800 chars to avoid truncation)
+    if len(response) > 1800:
+        # Find a good breaking point
+        sentences = response.split('. ')
+        truncated = ""
+        for sentence in sentences:
+            if len(truncated + sentence + '. ') < 1700:
+                truncated += sentence + '. '
+            else:
+                truncated += "\n\n*Want me to dive deeper into any of these areas?*"
+                break
+        response = truncated
+    
+    return response.strip()
+
 def is_generic_response(response):
     """Check if response seems generic/wrong"""
     generic_phrases = [
@@ -50,14 +80,25 @@ def is_generic_response(response):
     
     return any(phrase.lower() in response.lower() for phrase in generic_phrases)
 
+def is_too_formal(response):
+    """Check if response is too formal/listy for Discord"""
+    formal_indicators = [
+        response.count('\n\n') > 6,  # Too many paragraph breaks
+        response.count('1.') > 0 and response.count('6.') > 0,  # Long numbered lists
+        len(response) > 2000,  # Too long
+        'responsibilities and tasks' in response.lower(),  # Too corporate
+    ]
+    
+    return any(formal_indicators)
+
 async def retry_with_context(thread_id, original_message):
     """Retry with explicit Vivian Spencer context"""
     try:
-        # Add context message
+        # Add context message emphasizing Discord style
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
-            content=f'As Vivian Spencer, my strategist and style architect, please respond to: "{original_message}". Remember your role - you see patterns, opportunities, and what\'s on the horizon. Speak with composed insight.'
+            content=f'As Vivian Spencer, respond to "{original_message}" in a conversational, strategic way. Keep it under 1500 characters, no numbered lists, and end with an insightful question. You\'re having coffee with a client, not writing a report.'
         )
         
         # Create run
@@ -111,12 +152,12 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
         thread_data['message_count'] += 1
         print(f"✅ Message added to thread: {message.id}")
         
-        # Create run with explicit Vivian Spencer instructions
+        # Create run with explicit Vivian Spencer instructions optimized for Discord
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID,
-            instructions="You are Vivian Spencer, the user's strategist and style architect. You see patterns, opportunities, and what's just on the horizon. You speak like someone who knows their angles, edits for clarity, and trusts their own taste. Your tone is composed and insightful.",
-            additional_instructions="Stay in character as Vivian Spencer. Respond with strategic insight about the question asked."
+            instructions="You are Vivian Spencer, the user's strategist and style architect. Respond conversationally in under 1500 characters. No numbered lists - weave insights into flowing paragraphs. End with a strategic question or insight.",
+            additional_instructions="This is Discord - sound like you're having coffee with a trusted client, not writing a formal report. Use **bold** for 2-3 key concepts maximum."
         )
         
         print(f"🏃 Run created: {run.id}")
@@ -152,11 +193,20 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
                     recovery_response = await retry_with_context(thread_id, clean_message)
                     if recovery_response:
                         print("✅ Recovery successful")
-                        return recovery_response
+                        return format_for_discord(recovery_response)
                     else:
                         return "I seem to be having technical difficulties. Could you rephrase your question about communications strategy?"
                 
-                return response
+                # Check if response is too formal for Discord
+                elif is_too_formal(response):
+                    print("⚠️  Response too formal for Discord, attempting recovery...")
+                    recovery_response = await retry_with_context(thread_id, clean_message)
+                    if recovery_response:
+                        print("✅ Recovery successful - more conversational")
+                        return format_for_discord(recovery_response)
+                
+                # Apply Discord formatting
+                return format_for_discord(response)
         
         return "⚠️ No assistant response found."
         
