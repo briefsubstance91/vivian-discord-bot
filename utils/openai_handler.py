@@ -1,13 +1,114 @@
 import os
 import asyncio
+import json
 from openai import OpenAI
 from datetime import datetime, timedelta
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 
-# Store user threads in memory (per-user threads, NOT static)
+# Store user threads in memory
 user_threads = {}
+
+# Mock calendar data (replace with real calendar integration later)
+def get_mock_calendar_events():
+    """Mock calendar data - you can replace this with real calendar API later"""
+    today = datetime.now()
+    
+    mock_events = [
+        {
+            "title": "Team Standup",
+            "start_time": today.replace(hour=9, minute=30),
+            "duration": "30 min"
+        },
+        {
+            "title": "Strategy Review",
+            "start_time": today.replace(hour=14, minute=0),
+            "duration": "1 hour"
+        },
+        {
+            "title": "Client Call - Project Alpha",
+            "start_time": today.replace(hour=16, minute=30),
+            "duration": "45 min"
+        }
+    ]
+    
+    return mock_events
+
+def execute_function(function_name, arguments):
+    """Execute the called function and return results"""
+    
+    if function_name == "get_today_schedule":
+        events = get_mock_calendar_events()
+        
+        if not events:
+            return "No events scheduled for today"
+        
+        event_list = []
+        for event in events:
+            time_str = event['start_time'].strftime('%I:%M %p')
+            event_list.append(f"• {time_str}: {event['title']} ({event['duration']})")
+        
+        return "Today's Schedule:\n" + "\n".join(event_list)
+    
+    elif function_name == "get_upcoming_events":
+        days = arguments.get('days', 7)
+        events = get_mock_calendar_events()  # In real version, fetch for date range
+        
+        if not events:
+            return f"No events found in the next {days} days"
+        
+        event_list = []
+        for event in events:
+            if event['start_time'].date() == datetime.now().date():
+                time_str = f"Today at {event['start_time'].strftime('%I:%M %p')}"
+            else:
+                time_str = event['start_time'].strftime('%m/%d at %I:%M %p')
+            
+            event_list.append(f"• {event['title']} - {time_str}")
+        
+        return f"Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
+    
+    elif function_name == "find_free_time":
+        duration = arguments.get('duration', 60)
+        date = arguments.get('date', datetime.now().strftime('%Y-%m-%d'))
+        
+        # Mock free time logic
+        free_slots = [
+            "10:00 AM - 11:30 AM",
+            "2:00 PM - 3:00 PM", 
+            "4:30 PM - 6:00 PM"
+        ]
+        
+        return f"Free time slots on {date} (for {duration} min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
+    
+    else:
+        return f"Unknown function: {function_name}"
+
+async def handle_function_calls(run, thread_id):
+    """Handle function calls from the assistant"""
+    tool_outputs = []
+    
+    for tool_call in run.required_action.submit_tool_outputs.tool_calls:
+        function_name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+        
+        print(f"🔧 Executing function: {function_name} with args: {arguments}")
+        
+        # Execute the function
+        output = execute_function(function_name, arguments)
+        
+        tool_outputs.append({
+            "tool_call_id": tool_call.id,
+            "output": output
+        })
+    
+    # Submit the function outputs back to the assistant
+    client.beta.threads.runs.submit_tool_outputs(
+        thread_id=thread_id,
+        run_id=run.id,
+        tool_outputs=tool_outputs
+    )
 
 def should_refresh_thread(thread_data):
     """Check if thread should be refreshed (24 hours old or 50+ messages)"""
@@ -93,76 +194,12 @@ def format_for_discord(response, is_detailed=False):
     
     return response.strip()
 
-def is_generic_response(response):
-    """Check if response seems generic/wrong"""
-    generic_phrases = [
-        'ops crew',
-        'suggest some options',
-        'provide more details',
-        'tailor the suggestions',
-        'aligned with.*style and functionality'
-    ]
-    
-    return any(phrase.lower() in response.lower() for phrase in generic_phrases)
-
-def is_too_formal(response):
-    """Check if response is too formal/listy for Discord"""
-    formal_indicators = [
-        response.count('\n\n') > 6,  # Too many paragraph breaks
-        response.count('1.') > 0 and response.count('6.') > 0,  # Long numbered lists
-        len(response) > 2000,  # Too long
-        'responsibilities and tasks' in response.lower(),  # Too corporate
-    ]
-    
-    return any(formal_indicators)
-
-async def retry_with_context(thread_id, original_message):
-    """Retry with explicit Vivian Spencer context"""
-    try:
-        # Add context message emphasizing Discord style
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=f'As Vivian Spencer, respond to "{original_message}" in a conversational, strategic way. Keep it under 1500 characters, no numbered lists, and end with an insightful question. You\'re having coffee with a client, not writing a report.'
-        )
-        
-        # Create run
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=ASSISTANT_ID
-        )
-        
-        # Wait for completion (shorter timeout for retry)
-        for _ in range(15):
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
-            
-            if run_status.status == "completed":
-                messages = client.beta.threads.messages.list(thread_id=thread_id)
-                for msg in reversed(messages.data):
-                    if msg.role == "assistant":
-                        return msg.content[0].text.value
-                break
-            elif run_status.status in ["failed", "requires_action"]:
-                break
-                
-            await asyncio.sleep(1)
-        
-        return None
-    except Exception as error:
-        print(f"❌ Recovery attempt failed: {error}")
-        return None
-
 async def get_openai_response(user_message: str, user_id: int) -> str:
     try:
         # TEMPORARY FIX: Force new thread every message to avoid caching issues
-        # This ensures each question gets a fresh response instead of cached answers
-        # Remove this line once OpenAI fixes their caching behavior
         user_threads.clear()
         
-        # Get or create thread for this specific user (NOT static thread)
+        # Get or create thread for this specific user
         thread_data = get_or_create_thread(user_id)
         thread_id = thread_data['id']
         
@@ -187,11 +224,11 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
         
         # Create run with dynamic instructions based on request type
         if wants_detail:
-            instructions = "You are Vivian Spencer. Provide comprehensive strategic insights but cut the fluff. Every paragraph should add new value. Write conversationally but efficiently - no rambling or repetitive explanations. Pack strategic insights densely."
-            additional = "FORBIDDEN: Filler phrases, repetitive concepts, obvious statements. REQUIRED: Each sentence should deliver strategic value. Comprehensive but concise. Think strategic consultant giving premium insights, not casual blogger filling space."
+            instructions = "You are Vivian Spencer. Provide comprehensive strategic insights but cut the fluff. Every paragraph should add new value. Write conversationally but efficiently - no rambling or repetitive explanations. Pack strategic insights densely. When analyzing calendar data, focus on strategic patterns and time management insights."
+            additional = "FORBIDDEN: Filler phrases, repetitive concepts, obvious statements. REQUIRED: Each sentence should deliver strategic value. Comprehensive but concise. Use calendar functions when users ask about schedule, meetings, or time management."
         else:
-            instructions = "You are Vivian Spencer. Keep this conversational and strategic (800-1200 chars). Write like you're texting a smart friend - no formal language or corporate speak. Weave insights together naturally. End with strategic perspective or question."
-            additional = "Sound like Vivian - strategic, composed, insightful. Avoid phrases like 'The key is' or 'It's also smart to'. More like 'Here's what I see working' or 'The pattern I notice'. Strategic advisor voice, not generic advice."
+            instructions = "You are Vivian Spencer. Keep this conversational and strategic (800-1200 chars). Write like you're texting a smart friend - no formal language or corporate speak. Weave insights together naturally. End with strategic perspective or question. When users ask about calendar/schedule, use the available functions to get their real data, then provide strategic insights."
+            additional = "Sound like Vivian - strategic, composed, insightful. Avoid phrases like 'The key is' or 'It's also smart to'. More like 'Here's what I see working' or 'The pattern I notice'. Strategic advisor voice, not generic advice. Use calendar functions for schedule queries, then analyze patterns strategically."
 
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
@@ -202,7 +239,7 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
         
         print(f"🏃 Run created: {run.id}")
         
-        # Wait for completion
+        # Wait for completion with function call handling
         for _ in range(30):  # Wait up to ~30 seconds
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
@@ -212,6 +249,10 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
             
             if run_status.status == "completed":
                 break
+            elif run_status.status == "requires_action":
+                print("🔧 Function call required")
+                await handle_function_calls(run_status, thread_id)
+                continue
             elif run_status.status == "failed":
                 raise Exception("❌ Run failed.")
             elif run_status.status == "requires_action":
@@ -226,24 +267,6 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
             if msg.role == "assistant":
                 response = msg.content[0].text.value
                 print(f"✅ Got response: {response[:100]}...")
-                
-                # Check if response seems generic/wrong
-                if is_generic_response(response):
-                    print("⚠️  Detected generic response, attempting recovery...")
-                    recovery_response = await retry_with_context(thread_id, clean_message)
-                    if recovery_response:
-                        print("✅ Recovery successful")
-                        return format_for_discord(recovery_response, wants_detail)
-                    else:
-                        return "I seem to be having technical difficulties. Could you rephrase your question about communications strategy?"
-                
-                # Check if response is too formal for Discord
-                elif is_too_formal(response):
-                    print("⚠️  Response too formal for Discord, attempting recovery...")
-                    recovery_response = await retry_with_context(thread_id, clean_message)
-                    if recovery_response:
-                        print("✅ Recovery successful - more conversational")
-                        return format_for_discord(recovery_response, wants_detail)
                 
                 # Apply Discord formatting and return
                 return format_for_discord(response, wants_detail)
