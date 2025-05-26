@@ -5,6 +5,7 @@ from openai import OpenAI
 from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
@@ -20,10 +21,19 @@ def get_google_calendar_service():
         
         if not service_account_json:
             print("⚠️ GOOGLE_SERVICE_ACCOUNT_JSON not found in environment")
+            print("⚠️ Please add your service account JSON to Railway environment variables")
             return None
         
+        print("🔧 Found service account JSON, parsing...")
+        
         # Parse the JSON string
-        service_account_info = json.loads(service_account_json)
+        try:
+            service_account_info = json.loads(service_account_json)
+            print("✅ Service account JSON parsed successfully")
+        except json.JSONDecodeError as e:
+            print(f"❌ Failed to parse service account JSON: {e}")
+            print("💡 Make sure you copied the entire JSON content including { and }")
+            return None
         
         # Create credentials
         credentials = service_account.Credentials.from_service_account_info(
@@ -31,25 +41,43 @@ def get_google_calendar_service():
             scopes=['https://www.googleapis.com/auth/calendar.readonly']
         )
         
-        # If you need to access a specific user's calendar (not the service account's)
-        # you can use delegation:
+        # If you need to access a specific user's calendar (delegation)
         delegated_email = os.getenv('GOOGLE_CALENDAR_EMAIL')
         if delegated_email:
+            print(f"🔧 Using delegated access for: {delegated_email}")
             credentials = credentials.with_subject(delegated_email)
         
         # Build the service
         service = build('calendar', 'v3', credentials=credentials)
-        print("✅ Google Calendar service connected")
+        print("✅ Google Calendar service connected successfully")
+        
+        # Test the connection
+        try:
+            calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+            print(f"🔧 Testing connection to calendar: {calendar_id}")
+            
+            # Try to get calendar info
+            calendar = service.calendars().get(calendarId=calendar_id).execute()
+            print(f"✅ Connected to calendar: {calendar.get('summary', 'Unknown')}")
+            
+        except HttpError as e:
+            if e.resp.status == 404:
+                print(f"❌ Calendar not found: {calendar_id}")
+                print("💡 Make sure to share your calendar with the service account email")
+            elif e.resp.status == 403:
+                print(f"❌ No permission to access calendar: {calendar_id}")
+                print("💡 Share your calendar with the service account and give it 'See all event details' permission")
+            else:
+                print(f"❌ Error accessing calendar: {e}")
+        
         return service
         
-    except json.JSONDecodeError as e:
-        print(f"❌ Failed to parse service account JSON: {e}")
-        return None
     except Exception as e:
         print(f"❌ Failed to connect to Google Calendar: {e}")
+        print(f"Error type: {type(e).__name__}")
         return None
 
-def get_calendar_events(service, days_ahead=7, calendar_id='primary'):
+def get_calendar_events(service, days_ahead=7):
     """Get events from Google Calendar"""
     if not service:
         print("📅 Using mock calendar data (no Google Calendar connection)")
@@ -58,13 +86,14 @@ def get_calendar_events(service, days_ahead=7, calendar_id='primary'):
     try:
         # Get date range
         now = datetime.utcnow()
-        start_time = now.isoformat() + 'Z'
+        start_time = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         end_time = (now + timedelta(days=days_ahead)).isoformat() + 'Z'
         
-        print(f"📅 Fetching events for next {days_ahead} days")
-        
         # Use the calendar ID from environment or default to primary
-        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', calendar_id)
+        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+        
+        print(f"📅 Fetching events from calendar: {calendar_id}")
+        print(f"📅 Date range: {days_ahead} days from today")
         
         # Call the Calendar API
         events_result = service.events().list(
@@ -79,7 +108,7 @@ def get_calendar_events(service, days_ahead=7, calendar_id='primary'):
         events = events_result.get('items', [])
         
         if not events:
-            print('No upcoming events found.')
+            print('📅 No upcoming events found in calendar')
             return []
         
         calendar_events = []
@@ -97,7 +126,16 @@ def get_calendar_events(service, days_ahead=7, calendar_id='primary'):
             if end and 'T' in end:
                 end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
                 duration = end_dt - start_dt
-                duration_str = f"{int(duration.total_seconds() / 60)} min"
+                duration_min = int(duration.total_seconds() / 60)
+                if duration_min < 60:
+                    duration_str = f"{duration_min} min"
+                else:
+                    hours = duration_min // 60
+                    mins = duration_min % 60
+                    if mins > 0:
+                        duration_str = f"{hours}h {mins}min"
+                    else:
+                        duration_str = f"{hours} hour{'s' if hours > 1 else ''}"
             else:
                 duration_str = "All day"
             
@@ -112,9 +150,17 @@ def get_calendar_events(service, days_ahead=7, calendar_id='primary'):
         print(f"✅ Found {len(calendar_events)} calendar events")
         return calendar_events
         
+    except HttpError as e:
+        if e.resp.status == 404:
+            print(f"❌ Calendar not found. Make sure you've shared your calendar with the service account")
+        elif e.resp.status == 403:
+            print(f"❌ No permission to read calendar. Check that the service account has access")
+        else:
+            print(f"❌ HTTP error fetching events: {e}")
+        return get_mock_calendar_events()
     except Exception as e:
         print(f"❌ Error fetching Google Calendar events: {e}")
-        print(f"Error details: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
         return get_mock_calendar_events()
 
 def get_mock_calendar_events():
@@ -132,7 +178,7 @@ def get_mock_calendar_events():
         {
             "title": "Strategy Review", 
             "start_time": today.replace(hour=14, minute=0),
-            "duration": "60 min",
+            "duration": "1 hour",
             "description": "Q4 planning",
             "location": "Conference Room"
         },
@@ -148,13 +194,14 @@ def get_mock_calendar_events():
     return mock_events
 
 # Initialize Google Calendar service
-print("🔧 Setting up Google Calendar connection...")
+print("🔧 Initializing Google Calendar connection...")
 calendar_service = get_google_calendar_service()
 
 def execute_function(function_name, arguments):
     """Execute the called function and return results"""
     
     if function_name == "get_today_schedule":
+        # Get all events for the next 7 days
         events = get_calendar_events(calendar_service, days_ahead=1)
         
         # Filter for today only
@@ -172,6 +219,7 @@ def execute_function(function_name, arguments):
         return "📅 Today's Schedule:\n" + "\n".join(event_list)
     
     elif function_name == "get_tomorrow_schedule":
+        # Get events for next 2 days
         events = get_calendar_events(calendar_service, days_ahead=2)
         
         # Filter for tomorrow only
@@ -210,6 +258,11 @@ def execute_function(function_name, arguments):
             
             event_list.append(f"• {event['title']} - {time_str}")
         
+        # Limit to first 10 events for readability
+        if len(event_list) > 10:
+            event_list = event_list[:10]
+            event_list.append("... and more")
+        
         return f"📅 Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
     
     elif function_name == "find_free_time":
@@ -223,8 +276,8 @@ def execute_function(function_name, arguments):
             target_date = datetime.now()
         
         # Get events for the target date
-        days_ahead = (target_date.date() - datetime.now().date()).days + 1
-        events = get_calendar_events(calendar_service, days_ahead=max(1, days_ahead))
+        days_ahead = max(1, (target_date.date() - datetime.now().date()).days + 1)
+        events = get_calendar_events(calendar_service, days_ahead=days_ahead)
         
         # Filter events for the target date
         target_events = [e for e in events if e['start_time'].date() == target_date.date()]
@@ -253,6 +306,12 @@ def execute_function(function_name, arguments):
             if "min" in event['duration']:
                 try:
                     duration_min = int(event['duration'].split()[0])
+                except:
+                    pass
+            elif "hour" in event['duration']:
+                try:
+                    hours = int(event['duration'].split()[0])
+                    duration_min = hours * 60
                 except:
                     pass
             
@@ -441,6 +500,7 @@ async def get_openai_response(user_message: str, user_id: int) -> str:
                 await handle_function_calls(run_status, thread_id)
                 continue
             elif run_status.status == "failed":
+                print(f"❌ Run failed: {run_status.last_error}")
                 raise Exception("❌ Run failed.")
             
             await asyncio.sleep(1)
