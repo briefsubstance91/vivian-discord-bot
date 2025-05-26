@@ -41,11 +41,8 @@ def get_google_calendar_service():
             scopes=['https://www.googleapis.com/auth/calendar.readonly']
         )
         
-        # If you need to access a specific user's calendar (delegation)
-        delegated_email = os.getenv('GOOGLE_CALENDAR_EMAIL')
-        if delegated_email:
-            print(f"🔧 Using delegated access for: {delegated_email}")
-            credentials = credentials.with_subject(delegated_email)
+        # Note: Domain-wide delegation only works with Google Workspace accounts
+        # For regular Gmail accounts, skip delegation and share calendar with service account
         
         # Build the service
         service = build('calendar', 'v3', credentials=credentials)
