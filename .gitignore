@@ -7,3 +7,4 @@ __pycache__/
 .venv/
 .DS_Store
 vivian-spencer-74830a0125ab.json
+.credentials
