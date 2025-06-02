@@ -85,20 +85,29 @@ def get_google_service(service_name='calendar', version='v3'):
         
         # Define scopes based on service
         if service_name == 'calendar':
-            scopes = ['https://www.googleapis.com/auth/calendar.readonly']
+            scopes = ['https://www.googleapis.com/auth/calendar']
         elif service_name == 'gmail':
             scopes = [
-                'https://www.googleapis.com/auth/gmail.readonly',
-                'https://www.googleapis.com/auth/gmail.send',
-                'https://www.googleapis.com/auth/gmail.compose'
+                'https://www.googleapis.com/auth/gmail.modify',
+                'https://www.googleapis.com/auth/gmail.send'
             ]
         else:
-            scopes = ['https://www.googleapis.com/auth/calendar.readonly']
+            scopes = ['https://www.googleapis.com/auth/calendar']
         
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=scopes
         )
+        
+        # For Gmail, we need to specify the user email for domain-wide delegation
+        if service_name == 'gmail':
+            # Get the email from the calendar ID or use a default
+            user_email = os.getenv('GOOGLE_CALENDAR_ID', 'bgelineau@gmail.com')
+            if user_email == 'primary':
+                user_email = 'bgelineau@gmail.com'  # Replace with your actual email
+            
+            credentials = credentials.with_subject(user_email)
+            print(f"📧 Attempting Gmail access for: {user_email}")
         
         service = build(service_name, version, credentials=credentials)
         print(f"✅ Google {service_name.title()} service connected successfully")
@@ -180,7 +189,8 @@ def get_calendar_events(service, days_ahead=7):
                 "duration": duration_str,
                 "description": event.get('description', ''),
                 "location": event.get('location', ''),
-                "attendees": [att.get('email', '') for att in event.get('attendees', [])]
+                "attendees": [att.get('email', '') for att in event.get('attendees', [])],
+                "event_id": event.get('id', '')
             })
         
         print(f"✅ Found {len(calendar_events)} calendar events")
@@ -209,7 +219,8 @@ def get_mock_calendar_events():
             "duration": "30 min",
             "description": "Daily sync with development team",
             "location": "Zoom",
-            "attendees": ["team@company.com"]
+            "attendees": ["team@company.com"],
+            "event_id": "mock_event_1"
         },
         {
             "title": "Strategy Review", 
@@ -217,7 +228,8 @@ def get_mock_calendar_events():
             "duration": "1 hour",
             "description": "Q4 planning and roadmap review",
             "location": "Conference Room A",
-            "attendees": ["manager@company.com", "strategy@company.com"]
+            "attendees": ["manager@company.com", "strategy@company.com"],
+            "event_id": "mock_event_2"
         },
         {
             "title": "Client Call - Project Alpha",
@@ -225,21 +237,22 @@ def get_mock_calendar_events():
             "duration": "45 min",
             "description": "Progress update and next steps",
             "location": "Teams",
-            "attendees": ["client@clientcompany.com"]
+            "attendees": ["client@clientcompany.com"],
+            "event_id": "mock_event_3"
         }
     ]
     
     return mock_events
 
 # ============================================================================
-# GMAIL FUNCTIONS (New)
+# GMAIL FUNCTIONS (Enhanced)
 # ============================================================================
 
 def search_gmail_messages(service, query, max_results=10):
     """Search Gmail messages"""
     if not service:
         print("📧 Using mock email data (no Gmail connection)")
-        return get_mock_email_data()
+        return get_mock_email_data_for_query(query)
     
     try:
         # Use Gmail's search to find messages
@@ -252,48 +265,59 @@ def search_gmail_messages(service, query, max_results=10):
         messages = results.get('messages', [])
         
         if not messages:
+            print(f"📧 No messages found for query: {query}")
             return []
         
         email_list = []
         for msg in messages[:max_results]:
-            # Get full message details
-            message = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='full'
-            ).execute()
-            
-            # Extract headers
-            headers = message['payload'].get('headers', [])
-            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-            sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
-            date = next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
-            
-            # Extract body text
-            body = extract_email_body(message['payload'])
-            
-            # Parse date
             try:
-                from email.utils import parsedate_to_datetime
-                parsed_date = parsedate_to_datetime(date)
-            except:
-                parsed_date = datetime.now()
-            
-            email_list.append({
-                'id': msg['id'],
-                'subject': subject,
-                'sender': sender,
-                'date': parsed_date,
-                'body_preview': body[:200] + '...' if len(body) > 200 else body,
-                'full_body': body
-            })
+                # Get full message details
+                message = service.users().messages().get(
+                    userId='me',
+                    id=msg['id'],
+                    format='full'
+                ).execute()
+                
+                # Extract headers
+                headers = message['payload'].get('headers', [])
+                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+                sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+                date = next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
+                
+                # Extract body text
+                body = extract_email_body(message['payload'])
+                
+                # Parse date
+                try:
+                    from email.utils import parsedate_to_datetime
+                    parsed_date = parsedate_to_datetime(date)
+                except:
+                    parsed_date = datetime.now()
+                
+                # Check if unread
+                labels = message.get('labelIds', [])
+                is_unread = 'UNREAD' in labels
+                
+                email_list.append({
+                    'id': msg['id'],
+                    'subject': subject,
+                    'sender': sender,
+                    'date': parsed_date,
+                    'body_preview': body[:200] + '...' if len(body) > 200 else body,
+                    'full_body': body,
+                    'is_unread': is_unread
+                })
+            except Exception as msg_error:
+                print(f"⚠️ Error processing individual message: {msg_error}")
+                continue
         
         print(f"✅ Found {len(email_list)} email messages")
         return email_list
         
     except Exception as e:
         print(f"❌ Error searching Gmail: {e}")
-        return get_mock_email_data()
+        print(f"📧 Falling back to mock email data for query: {query}")
+        return get_mock_email_data_for_query(query)
 
 def extract_email_body(payload):
     """Extract text from email payload"""
@@ -407,6 +431,45 @@ def get_mock_email_data():
     
     return mock_emails
 
+def get_mock_email_data_for_query(query):
+    """Mock email data specific to the search query"""
+    today = datetime.now()
+    
+    # Create relevant mock emails based on the query
+    if any(word in query.lower() for word in ['coaching', 'nobs', 'call']):
+        mock_emails = [
+            {
+                'id': 'mock_coaching1',
+                'subject': 'NOBS Coaching Session - Next Week',
+                'sender': 'coach@nobscoaching.com',
+                'date': today - timedelta(days=2),
+                'body_preview': 'Hi! Your next NOBS coaching session is scheduled for next Tuesday at 2 PM. We\'ll be covering goal setting and accountability systems...',
+                'is_unread': True
+            },
+            {
+                'id': 'mock_coaching2',
+                'subject': 'Re: Coaching Call Follow-up',
+                'sender': 'support@nobscoaching.com',
+                'date': today - timedelta(days=5),
+                'body_preview': 'Thanks for attending last week\'s coaching session. Here are the action items we discussed: 1. Daily planning routine, 2. Priority matrix setup...',
+                'is_unread': False
+            }
+        ]
+    else:
+        # Generic mock for other queries
+        mock_emails = [
+            {
+                'id': 'mock_generic1',
+                'subject': f'Search results for: {query}',
+                'sender': 'system@example.com',
+                'date': today - timedelta(hours=1),
+                'body_preview': f'Gmail search is currently unavailable, but I would normally search for: {query}. Please check your Gmail directly or try again later.',
+                'is_unread': True
+            }
+        ]
+    
+    return mock_emails
+
 def send_email(service, to, subject, body, sender_email=None):
     """Send an email via Gmail"""
     if not service:
@@ -444,13 +507,355 @@ def send_email(service, to, subject, body, sender_email=None):
         return f"❌ Failed to send email: {str(e)}"
 
 # ============================================================================
-# FUNCTION EXECUTION (Enhanced with Debug)
+# CALENDAR MANAGEMENT FUNCTIONS
+# ============================================================================
+
+def create_calendar_event(service, title, start_datetime, end_datetime, description="", location="", attendees=None):
+    """Create a new calendar event"""
+    if not service:
+        return "📅 Calendar event creation not available (no Calendar connection)"
+    
+    try:
+        if attendees is None:
+            attendees = []
+        
+        # Convert datetime strings to proper format if needed
+        if isinstance(start_datetime, str):
+            start_datetime = datetime.fromisoformat(start_datetime)
+        if isinstance(end_datetime, str):
+            end_datetime = datetime.fromisoformat(end_datetime)
+        
+        event = {
+            'summary': title,
+            'description': description,
+            'location': location,
+            'start': {
+                'dateTime': start_datetime.isoformat(),
+                'timeZone': 'America/Toronto',  # Adjust to your timezone
+            },
+            'end': {
+                'dateTime': end_datetime.isoformat(),
+                'timeZone': 'America/Toronto',  # Adjust to your timezone
+            },
+            'attendees': [{'email': email} for email in attendees] if attendees else [],
+            'reminders': {
+                'useDefault': True,
+            },
+        }
+        
+        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+        created_event = service.events().insert(calendarId=calendar_id, body=event).execute()
+        
+        return f"✅ Created calendar event: '{title}' on {start_datetime.strftime('%m/%d at %I:%M %p')}"
+        
+    except Exception as e:
+        print(f"❌ Error creating calendar event: {e}")
+        return f"❌ Failed to create calendar event: {str(e)}"
+
+def update_calendar_event(service, event_id, title=None, start_datetime=None, end_datetime=None, description=None, location=None):
+    """Update an existing calendar event"""
+    if not service:
+        return "📅 Calendar event update not available (no Calendar connection)"
+    
+    try:
+        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+        
+        # Get existing event
+        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        
+        # Update fields if provided
+        if title:
+            event['summary'] = title
+        if description is not None:
+            event['description'] = description
+        if location is not None:
+            event['location'] = location
+        if start_datetime:
+            if isinstance(start_datetime, str):
+                start_datetime = datetime.fromisoformat(start_datetime)
+            event['start'] = {
+                'dateTime': start_datetime.isoformat(),
+                'timeZone': 'America/Toronto',
+            }
+        if end_datetime:
+            if isinstance(end_datetime, str):
+                end_datetime = datetime.fromisoformat(end_datetime)
+            event['end'] = {
+                'dateTime': end_datetime.isoformat(),
+                'timeZone': 'America/Toronto',
+            }
+        
+        updated_event = service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
+        
+        return f"✅ Updated calendar event: '{event['summary']}'"
+        
+    except Exception as e:
+        print(f"❌ Error updating calendar event: {e}")
+        return f"❌ Failed to update calendar event: {str(e)}"
+
+def delete_calendar_event(service, event_id):
+    """Delete a calendar event"""
+    if not service:
+        return "📅 Calendar event deletion not available (no Calendar connection)"
+    
+    try:
+        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+        
+        # Get event details before deleting
+        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        event_title = event.get('summary', 'Untitled Event')
+        
+        # Delete the event
+        service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        
+        return f"✅ Deleted calendar event: '{event_title}'"
+        
+    except Exception as e:
+        print(f"❌ Error deleting calendar event: {e}")
+        return f"❌ Failed to delete calendar event: {str(e)}"
+
+def move_calendar_event(service, event_id, new_start_datetime, new_end_datetime=None):
+    """Move/reschedule a calendar event to a new time"""
+    if not service:
+        return "📅 Calendar event move not available (no Calendar connection)"
+    
+    try:
+        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
+        
+        # Get existing event
+        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        
+        # Calculate duration if end time not provided
+        if not new_end_datetime:
+            original_start = datetime.fromisoformat(event['start']['dateTime'].replace('Z', '+00:00'))
+            original_end = datetime.fromisoformat(event['end']['dateTime'].replace('Z', '+00:00'))
+            duration = original_end - original_start
+            new_end_datetime = new_start_datetime + duration
+        
+        # Update times
+        if isinstance(new_start_datetime, str):
+            new_start_datetime = datetime.fromisoformat(new_start_datetime)
+        if isinstance(new_end_datetime, str):
+            new_end_datetime = datetime.fromisoformat(new_end_datetime)
+        
+        event['start'] = {
+            'dateTime': new_start_datetime.isoformat(),
+            'timeZone': 'America/Toronto',
+        }
+        event['end'] = {
+            'dateTime': new_end_datetime.isoformat(),
+            'timeZone': 'America/Toronto',
+        }
+        
+        updated_event = service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
+        
+        return f"✅ Moved '{event['summary']}' to {new_start_datetime.strftime('%m/%d at %I:%M %p')}"
+        
+    except Exception as e:
+        print(f"❌ Error moving calendar event: {e}")
+        return f"❌ Failed to move calendar event: {str(e)}"
+
+# ============================================================================
+# EMAIL MANAGEMENT FUNCTIONS
+# ============================================================================
+
+def delete_email(service, message_id):
+    """Delete an email permanently"""
+    if not service:
+        return "📧 Email deletion not available (no Gmail connection)"
+    
+    try:
+        # Get email details before deleting
+        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
+        headers = message['payload'].get('headers', [])
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+        
+        # Delete the message
+        service.users().messages().delete(userId='me', id=message_id).execute()
+        
+        return f"✅ Deleted email: '{subject}'"
+        
+    except Exception as e:
+        print(f"❌ Error deleting email: {e}")
+        return f"❌ Failed to delete email: {str(e)}"
+
+def archive_email(service, message_id):
+    """Archive an email (remove from inbox)"""
+    if not service:
+        return "📧 Email archiving not available (no Gmail connection)"
+    
+    try:
+        # Get email details
+        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
+        headers = message['payload'].get('headers', [])
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+        
+        # Remove INBOX label to archive
+        service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'removeLabelIds': ['INBOX']}
+        ).execute()
+        
+        return f"✅ Archived email: '{subject}'"
+        
+    except Exception as e:
+        print(f"❌ Error archiving email: {e}")
+        return f"❌ Failed to archive email: {str(e)}"
+
+def label_email(service, message_id, labels_to_add=None, labels_to_remove=None):
+    """Add or remove labels from an email"""
+    if not service:
+        return "📧 Email labeling not available (no Gmail connection)"
+    
+    try:
+        if labels_to_add is None:
+            labels_to_add = []
+        if labels_to_remove is None:
+            labels_to_remove = []
+        
+        # Get email details
+        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
+        headers = message['payload'].get('headers', [])
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+        
+        # Modify labels
+        modify_request = {}
+        if labels_to_add:
+            modify_request['addLabelIds'] = labels_to_add
+        if labels_to_remove:
+            modify_request['removeLabelIds'] = labels_to_remove
+        
+        service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body=modify_request
+        ).execute()
+        
+        action_desc = []
+        if labels_to_add:
+            action_desc.append(f"added labels: {', '.join(labels_to_add)}")
+        if labels_to_remove:
+            action_desc.append(f"removed labels: {', '.join(labels_to_remove)}")
+        
+        return f"✅ Updated email '{subject}': {'; '.join(action_desc)}"
+        
+    except Exception as e:
+        print(f"❌ Error labeling email: {e}")
+        return f"❌ Failed to label email: {str(e)}"
+
+def reply_to_email(service, message_id, reply_body, include_original=True):
+    """Reply to an email"""
+    if not service:
+        return "📧 Email reply not available (no Gmail connection)"
+    
+    try:
+        import email.mime.text
+        import email.mime.multipart
+        
+        # Get original message
+        original_message = service.users().messages().get(userId='me', id=message_id, format='full').execute()
+        headers = original_message['payload'].get('headers', [])
+        
+        original_subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+        original_from = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+        original_to = next((h['value'] for h in headers if h['name'] == 'To'), '')
+        message_id_header = next((h['value'] for h in headers if h['name'] == 'Message-ID'), '')
+        
+        # Extract sender email from "Name <email>" format
+        import re
+        sender_match = re.search(r'<(.+?)>', original_from)
+        reply_to = sender_match.group(1) if sender_match else original_from
+        
+        # Create reply subject
+        reply_subject = original_subject if original_subject.startswith('Re: ') else f'Re: {original_subject}'
+        
+        # Create reply message
+        reply_message = email.mime.multipart.MIMEMultipart()
+        reply_message['to'] = reply_to
+        reply_message['subject'] = reply_subject
+        reply_message['in-reply-to'] = message_id_header
+        reply_message['references'] = message_id_header
+        
+        # Add reply body
+        full_reply_body = reply_body
+        if include_original:
+            original_body = extract_email_body(original_message['payload'])
+            full_reply_body += f"\n\n--- Original Message ---\nFrom: {original_from}\nSubject: {original_subject}\n\n{original_body}"
+        
+        msg_body = email.mime.text.MIMEText(full_reply_body)
+        reply_message.attach(msg_body)
+        
+        # Encode and send
+        raw_message = base64.urlsafe_b64encode(reply_message.as_bytes()).decode('utf-8')
+        
+        send_result = service.users().messages().send(
+            userId='me',
+            body={'raw': raw_message, 'threadId': original_message['threadId']}
+        ).execute()
+        
+        return f"✅ Sent reply to '{original_subject}'"
+        
+    except Exception as e:
+        print(f"❌ Error replying to email: {e}")
+        return f"❌ Failed to reply to email: {str(e)}"
+
+def mark_email_read(service, message_id):
+    """Mark an email as read"""
+    if not service:
+        return "📧 Email marking not available (no Gmail connection)"
+    
+    try:
+        # Get email details
+        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
+        headers = message['payload'].get('headers', [])
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+        
+        # Remove UNREAD label
+        service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'removeLabelIds': ['UNREAD']}
+        ).execute()
+        
+        return f"✅ Marked as read: '{subject}'"
+        
+    except Exception as e:
+        print(f"❌ Error marking email as read: {e}")
+        return f"❌ Failed to mark email as read: {str(e)}"
+
+def mark_email_unread(service, message_id):
+    """Mark an email as unread"""
+    if not service:
+        return "📧 Email marking not available (no Gmail connection)"
+    
+    try:
+        # Get email details
+        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
+        headers = message['payload'].get('headers', [])
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+        
+        # Add UNREAD label
+        service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'addLabelIds': ['UNREAD']}
+        ).execute()
+        
+        return f"✅ Marked as unread: '{subject}'"
+        
+    except Exception as e:
+        print(f"❌ Error marking email as unread: {e}")
+        return f"❌ Failed to mark email as unread: {str(e)}"
+
+# ============================================================================
+# FUNCTION EXECUTION (Enhanced with All Management Functions)
 # ============================================================================
 
 def execute_function(function_name, arguments):
     """Execute the called function and return results"""
     
-    # Calendar functions
+    # Calendar Reading Functions
     if function_name == "get_today_schedule":
         events = get_calendar_events(calendar_service, days_ahead=1)
         today = datetime.now().date()
@@ -594,7 +999,64 @@ def execute_function(function_name, arguments):
         print(f"🔍 DEBUG: find_free_time returning: {result[:200]}...")
         return result
     
-    # Gmail functions
+    # Calendar Management Functions
+    elif function_name == "create_calendar_event":
+        title = arguments.get('title', '')
+        start_datetime = arguments.get('start_datetime', '')
+        end_datetime = arguments.get('end_datetime', '')
+        description = arguments.get('description', '')
+        location = arguments.get('location', '')
+        attendees = arguments.get('attendees', [])
+        
+        if not title or not start_datetime:
+            result = "Missing required fields: title and start_datetime are required"
+        else:
+            result = create_calendar_event(calendar_service, title, start_datetime, end_datetime, description, location, attendees)
+        
+        print(f"🔍 DEBUG: create_calendar_event returning: {result}")
+        return result
+    
+    elif function_name == "update_calendar_event":
+        event_id = arguments.get('event_id', '')
+        title = arguments.get('title')
+        start_datetime = arguments.get('start_datetime')
+        end_datetime = arguments.get('end_datetime')
+        description = arguments.get('description')
+        location = arguments.get('location')
+        
+        if not event_id:
+            result = "Missing required field: event_id is required"
+        else:
+            result = update_calendar_event(calendar_service, event_id, title, start_datetime, end_datetime, description, location)
+        
+        print(f"🔍 DEBUG: update_calendar_event returning: {result}")
+        return result
+    
+    elif function_name == "delete_calendar_event":
+        event_id = arguments.get('event_id', '')
+        
+        if not event_id:
+            result = "Missing required field: event_id is required"
+        else:
+            result = delete_calendar_event(calendar_service, event_id)
+        
+        print(f"🔍 DEBUG: delete_calendar_event returning: {result}")
+        return result
+    
+    elif function_name == "move_calendar_event":
+        event_id = arguments.get('event_id', '')
+        new_start_datetime = arguments.get('new_start_datetime', '')
+        new_end_datetime = arguments.get('new_end_datetime')
+        
+        if not event_id or not new_start_datetime:
+            result = "Missing required fields: event_id and new_start_datetime are required"
+        else:
+            result = move_calendar_event(calendar_service, event_id, new_start_datetime, new_end_datetime)
+        
+        print(f"🔍 DEBUG: move_calendar_event returning: {result}")
+        return result
+    
+    # Email Reading Functions
     elif function_name == "search_emails":
         query = arguments.get('query', '')
         max_results = arguments.get('max_results', 10)
@@ -654,6 +1116,77 @@ def execute_function(function_name, arguments):
             result = send_email(gmail_service, to, subject, body)
         
         print(f"🔍 DEBUG: send_email returning: {result[:200]}...")
+        return result
+    
+    # Email Management Functions
+    elif function_name == "delete_email":
+        message_id = arguments.get('message_id', '')
+        
+        if not message_id:
+            result = "Missing required field: message_id is required"
+        else:
+            result = delete_email(gmail_service, message_id)
+        
+        print(f"🔍 DEBUG: delete_email returning: {result}")
+        return result
+    
+    elif function_name == "archive_email":
+        message_id = arguments.get('message_id', '')
+        
+        if not message_id:
+            result = "Missing required field: message_id is required"
+        else:
+            result = archive_email(gmail_service, message_id)
+        
+        print(f"🔍 DEBUG: archive_email returning: {result}")
+        return result
+    
+    elif function_name == "label_email":
+        message_id = arguments.get('message_id', '')
+        labels_to_add = arguments.get('labels_to_add', [])
+        labels_to_remove = arguments.get('labels_to_remove', [])
+        
+        if not message_id:
+            result = "Missing required field: message_id is required"
+        else:
+            result = label_email(gmail_service, message_id, labels_to_add, labels_to_remove)
+        
+        print(f"🔍 DEBUG: label_email returning: {result}")
+        return result
+    
+    elif function_name == "reply_to_email":
+        message_id = arguments.get('message_id', '')
+        reply_body = arguments.get('reply_body', '')
+        include_original = arguments.get('include_original', True)
+        
+        if not message_id or not reply_body:
+            result = "Missing required fields: message_id and reply_body are required"
+        else:
+            result = reply_to_email(gmail_service, message_id, reply_body, include_original)
+        
+        print(f"🔍 DEBUG: reply_to_email returning: {result}")
+        return result
+    
+    elif function_name == "mark_email_read":
+        message_id = arguments.get('message_id', '')
+        
+        if not message_id:
+            result = "Missing required field: message_id is required"
+        else:
+            result = mark_email_read(gmail_service, message_id)
+        
+        print(f"🔍 DEBUG: mark_email_read returning: {result}")
+        return result
+    
+    elif function_name == "mark_email_unread":
+        message_id = arguments.get('message_id', '')
+        
+        if not message_id:
+            result = "Missing required field: message_id is required"
+        else:
+            result = mark_email_unread(gmail_service, message_id)
+        
+        print(f"🔍 DEBUG: mark_email_unread returning: {result}")
         return result
     
     else:
