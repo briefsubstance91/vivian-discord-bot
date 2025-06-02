@@ -444,7 +444,7 @@ def send_email(service, to, subject, body, sender_email=None):
         return f"❌ Failed to send email: {str(e)}"
 
 # ============================================================================
-# FUNCTION EXECUTION (Enhanced)
+# FUNCTION EXECUTION (Enhanced with Debug)
 # ============================================================================
 
 def execute_function(function_name, arguments):
@@ -456,63 +456,83 @@ def execute_function(function_name, arguments):
         today = datetime.now().date()
         today_events = [e for e in events if e['start_time'].date() == today]
         
-        if not today_events:
-            return "No events scheduled for today"
-        
-        event_list = []
+        print(f"🔍 DEBUG: Found {len(events)} total events, {len(today_events)} today events")
         for event in today_events:
-            time_str = event['start_time'].strftime('%I:%M %p')
-            attendee_info = f" (with {len(event['attendees'])} attendees)" if event['attendees'] else ""
-            event_list.append(f"• {time_str}: {event['title']} ({event['duration']}){attendee_info}")
-            if event['location']:
-                event_list.append(f"  📍 {event['location']}")
+            print(f"🔍 DEBUG: Today event - {event['title']} at {event['start_time']}")
         
-        return "📅 Today's Schedule:\n" + "\n".join(event_list)
+        if not today_events:
+            result = "No events scheduled for today"
+        else:
+            event_list = []
+            for event in today_events:
+                time_str = event['start_time'].strftime('%I:%M %p')
+                attendee_info = f" (with {len(event['attendees'])} attendees)" if event['attendees'] else ""
+                event_list.append(f"• {time_str}: {event['title']} ({event['duration']}){attendee_info}")
+                if event['location']:
+                    event_list.append(f"  📍 {event['location']}")
+            
+            result = "📅 Today's Schedule:\n" + "\n".join(event_list)
+        
+        print(f"🔍 DEBUG: get_today_schedule returning: {result[:200]}...")
+        return result
     
     elif function_name == "get_tomorrow_schedule":
         events = get_calendar_events(calendar_service, days_ahead=2)
         tomorrow = (datetime.now() + timedelta(days=1)).date()
         tomorrow_events = [e for e in events if e['start_time'].date() == tomorrow]
         
-        if not tomorrow_events:
-            return "No events scheduled for tomorrow"
-        
-        event_list = []
+        print(f"🔍 DEBUG: Found {len(events)} total events, {len(tomorrow_events)} tomorrow events")
         for event in tomorrow_events:
-            time_str = event['start_time'].strftime('%I:%M %p')
-            event_list.append(f"• {time_str}: {event['title']} ({event['duration']})")
-            if event['location']:
-                event_list.append(f"  📍 {event['location']}")
+            print(f"🔍 DEBUG: Tomorrow event - {event['title']} at {event['start_time']}")
         
-        return "📅 Tomorrow's Schedule:\n" + "\n".join(event_list)
+        if not tomorrow_events:
+            result = "No events scheduled for tomorrow"
+        else:
+            event_list = []
+            for event in tomorrow_events:
+                time_str = event['start_time'].strftime('%I:%M %p')
+                attendee_info = f" (with {len(event['attendees'])} attendees)" if event['attendees'] else ""
+                event_list.append(f"• {time_str}: {event['title']} ({event['duration']}){attendee_info}")
+                if event['location']:
+                    event_list.append(f"  📍 {event['location']}")
+            
+            result = "📅 Tomorrow's Schedule:\n" + "\n".join(event_list)
+        
+        print(f"🔍 DEBUG: get_tomorrow_schedule returning: {result[:200]}...")
+        return result
     
     elif function_name == "get_upcoming_events":
         days = arguments.get('days', 7)
         events = get_calendar_events(calendar_service, days_ahead=days)
         
+        print(f"🔍 DEBUG: Found {len(events)} events for next {days} days")
+        
         if not events:
-            return f"No events found in the next {days} days"
-        
-        event_list = []
-        today = datetime.now().date()
-        
-        for event in events[:10]:
-            event_date = event['start_time'].date()
+            result = f"No events found in the next {days} days"
+        else:
+            event_list = []
+            today = datetime.now().date()
             
-            if event_date == today:
-                time_str = f"Today at {event['start_time'].strftime('%I:%M %p')}"
-            elif event_date == today + timedelta(days=1):
-                time_str = f"Tomorrow at {event['start_time'].strftime('%I:%M %p')}"
-            else:
-                time_str = event['start_time'].strftime('%m/%d at %I:%M %p')
+            for event in events[:10]:
+                event_date = event['start_time'].date()
+                
+                if event_date == today:
+                    time_str = f"Today at {event['start_time'].strftime('%I:%M %p')}"
+                elif event_date == today + timedelta(days=1):
+                    time_str = f"Tomorrow at {event['start_time'].strftime('%I:%M %p')}"
+                else:
+                    time_str = event['start_time'].strftime('%m/%d at %I:%M %p')
+                
+                event_list.append(f"• {event['title']} - {time_str}")
             
-            event_list.append(f"• {event['title']} - {time_str}")
+            if len(event_list) > 10:
+                event_list = event_list[:10]
+                event_list.append("... and more")
+            
+            result = f"📅 Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
         
-        if len(event_list) > 10:
-            event_list = event_list[:10]
-            event_list.append("... and more")
-        
-        return f"📅 Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
+        print(f"🔍 DEBUG: get_upcoming_events returning: {result[:200]}...")
+        return result
     
     elif function_name == "find_free_time":
         duration = arguments.get('duration', 60)
@@ -567,9 +587,12 @@ def execute_function(function_name, arguments):
                 free_slots.append(f"{current_time.strftime('%I:%M %p')} - {business_end.strftime('%I:%M %p')}")
         
         if not free_slots:
-            return f"No free blocks of {duration}+ minutes found on {target_date.strftime('%Y-%m-%d')}"
+            result = f"No free blocks of {duration}+ minutes found on {target_date.strftime('%Y-%m-%d')}"
+        else:
+            result = f"⏰ Free time slots on {target_date.strftime('%Y-%m-%d')} ({duration}+ min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
         
-        return f"⏰ Free time slots on {target_date.strftime('%Y-%m-%d')} ({duration}+ min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
+        print(f"🔍 DEBUG: find_free_time returning: {result[:200]}...")
+        return result
     
     # Gmail functions
     elif function_name == "search_emails":
@@ -578,38 +601,47 @@ def execute_function(function_name, arguments):
         
         emails = search_gmail_messages(gmail_service, query, max_results)
         
+        print(f"🔍 DEBUG: Found {len(emails)} emails for query '{query}'")
+        
         if not emails:
-            return f"No emails found matching '{query}'"
+            result = f"No emails found matching '{query}'"
+        else:
+            email_list = []
+            for email in emails:
+                date_str = email['date'].strftime('%m/%d %I:%M %p')
+                unread_indicator = "🔵 " if email.get('is_unread') else ""
+                email_list.append(f"• {unread_indicator}{email['subject']}\n  From: {email['sender']} ({date_str})\n  Preview: {email['body_preview']}")
+            
+            result = f"📧 Email Search Results for '{query}':\n\n" + "\n\n".join(email_list)
         
-        email_list = []
-        for email in emails:
-            date_str = email['date'].strftime('%m/%d %I:%M %p')
-            unread_indicator = "🔵 " if email.get('is_unread') else ""
-            email_list.append(f"• {unread_indicator}{email['subject']}\n  From: {email['sender']} ({date_str})\n  Preview: {email['body_preview']}")
-        
-        return f"📧 Email Search Results for '{query}':\n\n" + "\n\n".join(email_list)
+        print(f"🔍 DEBUG: search_emails returning: {result[:200]}...")
+        return result
     
     elif function_name == "get_recent_emails":
         max_results = arguments.get('max_results', 10)
         
         emails = get_recent_emails(gmail_service, max_results)
         
+        print(f"🔍 DEBUG: Found {len(emails)} recent emails")
+        
         if not emails:
-            return "No recent emails found"
-        
-        email_list = []
-        unread_count = 0
-        
-        for email in emails:
-            date_str = email['date'].strftime('%m/%d %I:%M %p')
-            unread_indicator = "🔵 " if email.get('is_unread') else ""
-            if email.get('is_unread'):
-                unread_count += 1
+            result = "No recent emails found"
+        else:
+            email_list = []
+            unread_count = 0
             
-            email_list.append(f"• {unread_indicator}{email['subject']}\n  From: {email['sender']} ({date_str})\n  Preview: {email['body_preview']}")
+            for email in emails:
+                date_str = email['date'].strftime('%m/%d %I:%M %p')
+                unread_indicator = "🔵 " if email.get('is_unread') else ""
+                if email.get('is_unread'):
+                    unread_count += 1
+                
+                email_list.append(f"• {unread_indicator}{email['subject']}\n  From: {email['sender']} ({date_str})\n  Preview: {email['body_preview']}")
+            
+            result = f"📧 Recent Emails ({unread_count} unread):\n\n" + "\n\n".join(email_list)
         
-        header = f"📧 Recent Emails ({unread_count} unread):\n\n"
-        return header + "\n\n".join(email_list)
+        print(f"🔍 DEBUG: get_recent_emails returning: {result[:200]}...")
+        return result
     
     elif function_name == "send_email":
         to = arguments.get('to', '')
@@ -617,13 +649,17 @@ def execute_function(function_name, arguments):
         body = arguments.get('body', '')
         
         if not to or not subject or not body:
-            return "Missing required email fields: to, subject, and body are all required"
+            result = "Missing required email fields: to, subject, and body are all required"
+        else:
+            result = send_email(gmail_service, to, subject, body)
         
-        result = send_email(gmail_service, to, subject, body)
+        print(f"🔍 DEBUG: send_email returning: {result[:200]}...")
         return result
     
     else:
-        return f"Unknown function: {function_name}"
+        result = f"Unknown function: {function_name}"
+        print(f"🔍 DEBUG: Unknown function {function_name}")
+        return result
 
 async def handle_function_calls(run, thread_id):
     """Handle function calls from the assistant"""
