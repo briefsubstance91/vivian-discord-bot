@@ -2,8 +2,9 @@ import os
 import asyncio
 import json
 import base64
-from openai import OpenAI
+import pytz
 from datetime import datetime, timedelta
+from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -15,6 +16,9 @@ ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 user_conversations = {}  # user_id -> thread_id
 conversation_context = {}  # user_id -> recent message history
 MAX_CONTEXT_MESSAGES = 10  # Remember last 10 messages per user
+
+# Set your timezone here - UPDATE THIS TO YOUR TIMEZONE
+LOCAL_TIMEZONE = 'America/Toronto'  # Change to your timezone!
 
 # ============================================================================
 # MEMORY SYSTEM (Enhanced from Celeste)
@@ -122,29 +126,38 @@ calendar_service = get_google_service('calendar', 'v3')
 gmail_service = get_google_service('gmail', 'v1')
 
 # ============================================================================
-# CALENDAR FUNCTIONS (Enhanced from existing)
+# CALENDAR FUNCTIONS (Enhanced with Timezone Support)
 # ============================================================================
 
 def get_calendar_events(service, days_ahead=7):
-    """Get events from Google Calendar"""
+    """Get events from Google Calendar with proper timezone handling"""
     if not service:
         print("📅 Using mock calendar data (no Google Calendar connection)")
         return get_mock_calendar_events()
     
     try:
-        now = datetime.utcnow()
-        start_time = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-        end_time = (now + timedelta(days=days_ahead)).isoformat() + 'Z'
+        # Use local timezone
+        local_tz = pytz.timezone(LOCAL_TIMEZONE)
+        now = datetime.now(local_tz)
+        
+        # Get start of today in local time, then convert to UTC for API
+        start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_time = start_of_today + timedelta(days=days_ahead)
+        
+        # Convert to UTC for the API call
+        start_time_utc = start_of_today.astimezone(pytz.UTC).isoformat()
+        end_time_utc = end_time.astimezone(pytz.UTC).isoformat()
         
         calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
         
         print(f"📅 Fetching events from calendar: {calendar_id}")
-        print(f"📅 Date range: {days_ahead} days from today")
+        print(f"📅 Local time range: {start_of_today.strftime('%Y-%m-%d %H:%M')} to {end_time.strftime('%Y-%m-%d %H:%M')}")
+        print(f"📅 Timezone: {LOCAL_TIMEZONE}")
         
         events_result = service.events().list(
             calendarId=calendar_id,
-            timeMin=start_time,
-            timeMax=end_time,
+            timeMin=start_time_utc,
+            timeMax=end_time_utc,
             maxResults=50,
             singleEvents=True,
             orderBy='startTime'
@@ -161,14 +174,34 @@ def get_calendar_events(service, days_ahead=7):
             start = event['start'].get('dateTime', event['start'].get('date'))
             end = event['end'].get('dateTime', event['end'].get('date'))
             
+            # Parse start time with proper timezone handling
             if 'T' in start:
-                start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                # Handle datetime with timezone
+                if start.endswith('Z'):
+                    start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                else:
+                    start_dt = datetime.fromisoformat(start)
+                
+                # Convert to local timezone for display
+                if start_dt.tzinfo is None:
+                    start_dt = pytz.UTC.localize(start_dt)
+                start_dt = start_dt.astimezone(local_tz)
             else:
+                # All-day event
                 start_dt = datetime.strptime(start, '%Y-%m-%d')
+                start_dt = local_tz.localize(start_dt)
             
             # Calculate duration
             if end and 'T' in end:
-                end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
+                if end.endswith('Z'):
+                    end_dt = datetime.fromisoformat(end.replace('Z', '+00:00'))
+                else:
+                    end_dt = datetime.fromisoformat(end)
+                
+                if end_dt.tzinfo is None:
+                    end_dt = pytz.UTC.localize(end_dt)
+                end_dt = end_dt.astimezone(local_tz)
+                
                 duration = end_dt - start_dt
                 duration_min = int(duration.total_seconds() / 60)
                 if duration_min < 60:
@@ -192,6 +225,9 @@ def get_calendar_events(service, days_ahead=7):
                 "attendees": [att.get('email', '') for att in event.get('attendees', [])],
                 "event_id": event.get('id', '')
             })
+            
+            # Debug: Print each event with its date
+            print(f"🔍 DEBUG: Event '{event.get('summary', 'Untitled')}' on {start_dt.strftime('%Y-%m-%d %H:%M')} (Date: {start_dt.date()})")
         
         print(f"✅ Found {len(calendar_events)} calendar events")
         return calendar_events
@@ -206,11 +242,14 @@ def get_calendar_events(service, days_ahead=7):
         return get_mock_calendar_events()
     except Exception as e:
         print(f"❌ Error fetching Google Calendar events: {e}")
+        import traceback
+        print(f"📋 Full traceback: {traceback.format_exc()}")
         return get_mock_calendar_events()
 
 def get_mock_calendar_events():
     """Mock calendar data - fallback when no real calendar available"""
-    today = datetime.now()
+    local_tz = pytz.timezone(LOCAL_TIMEZONE)
+    today = datetime.now(local_tz)
     
     mock_events = [
         {
@@ -507,401 +546,123 @@ def send_email(service, to, subject, body, sender_email=None):
         return f"❌ Failed to send email: {str(e)}"
 
 # ============================================================================
-# CALENDAR MANAGEMENT FUNCTIONS
-# ============================================================================
-
-def create_calendar_event(service, title, start_datetime, end_datetime, description="", location="", attendees=None):
-    """Create a new calendar event"""
-    if not service:
-        return "📅 Calendar event creation not available (no Calendar connection)"
-    
-    try:
-        if attendees is None:
-            attendees = []
-        
-        # Convert datetime strings to proper format if needed
-        if isinstance(start_datetime, str):
-            start_datetime = datetime.fromisoformat(start_datetime)
-        if isinstance(end_datetime, str):
-            end_datetime = datetime.fromisoformat(end_datetime)
-        
-        event = {
-            'summary': title,
-            'description': description,
-            'location': location,
-            'start': {
-                'dateTime': start_datetime.isoformat(),
-                'timeZone': 'America/Toronto',  # Adjust to your timezone
-            },
-            'end': {
-                'dateTime': end_datetime.isoformat(),
-                'timeZone': 'America/Toronto',  # Adjust to your timezone
-            },
-            'attendees': [{'email': email} for email in attendees] if attendees else [],
-            'reminders': {
-                'useDefault': True,
-            },
-        }
-        
-        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
-        created_event = service.events().insert(calendarId=calendar_id, body=event).execute()
-        
-        return f"✅ Created calendar event: '{title}' on {start_datetime.strftime('%m/%d at %I:%M %p')}"
-        
-    except Exception as e:
-        print(f"❌ Error creating calendar event: {e}")
-        return f"❌ Failed to create calendar event: {str(e)}"
-
-def update_calendar_event(service, event_id, title=None, start_datetime=None, end_datetime=None, description=None, location=None):
-    """Update an existing calendar event"""
-    if not service:
-        return "📅 Calendar event update not available (no Calendar connection)"
-    
-    try:
-        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
-        
-        # Get existing event
-        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
-        
-        # Update fields if provided
-        if title:
-            event['summary'] = title
-        if description is not None:
-            event['description'] = description
-        if location is not None:
-            event['location'] = location
-        if start_datetime:
-            if isinstance(start_datetime, str):
-                start_datetime = datetime.fromisoformat(start_datetime)
-            event['start'] = {
-                'dateTime': start_datetime.isoformat(),
-                'timeZone': 'America/Toronto',
-            }
-        if end_datetime:
-            if isinstance(end_datetime, str):
-                end_datetime = datetime.fromisoformat(end_datetime)
-            event['end'] = {
-                'dateTime': end_datetime.isoformat(),
-                'timeZone': 'America/Toronto',
-            }
-        
-        updated_event = service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
-        
-        return f"✅ Updated calendar event: '{event['summary']}'"
-        
-    except Exception as e:
-        print(f"❌ Error updating calendar event: {e}")
-        return f"❌ Failed to update calendar event: {str(e)}"
-
-def delete_calendar_event(service, event_id):
-    """Delete a calendar event"""
-    if not service:
-        return "📅 Calendar event deletion not available (no Calendar connection)"
-    
-    try:
-        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
-        
-        # Get event details before deleting
-        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
-        event_title = event.get('summary', 'Untitled Event')
-        
-        # Delete the event
-        service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
-        
-        return f"✅ Deleted calendar event: '{event_title}'"
-        
-    except Exception as e:
-        print(f"❌ Error deleting calendar event: {e}")
-        return f"❌ Failed to delete calendar event: {str(e)}"
-
-def move_calendar_event(service, event_id, new_start_datetime, new_end_datetime=None):
-    """Move/reschedule a calendar event to a new time"""
-    if not service:
-        return "📅 Calendar event move not available (no Calendar connection)"
-    
-    try:
-        calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
-        
-        # Get existing event
-        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
-        
-        # Calculate duration if end time not provided
-        if not new_end_datetime:
-            original_start = datetime.fromisoformat(event['start']['dateTime'].replace('Z', '+00:00'))
-            original_end = datetime.fromisoformat(event['end']['dateTime'].replace('Z', '+00:00'))
-            duration = original_end - original_start
-            new_end_datetime = new_start_datetime + duration
-        
-        # Update times
-        if isinstance(new_start_datetime, str):
-            new_start_datetime = datetime.fromisoformat(new_start_datetime)
-        if isinstance(new_end_datetime, str):
-            new_end_datetime = datetime.fromisoformat(new_end_datetime)
-        
-        event['start'] = {
-            'dateTime': new_start_datetime.isoformat(),
-            'timeZone': 'America/Toronto',
-        }
-        event['end'] = {
-            'dateTime': new_end_datetime.isoformat(),
-            'timeZone': 'America/Toronto',
-        }
-        
-        updated_event = service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
-        
-        return f"✅ Moved '{event['summary']}' to {new_start_datetime.strftime('%m/%d at %I:%M %p')}"
-        
-    except Exception as e:
-        print(f"❌ Error moving calendar event: {e}")
-        return f"❌ Failed to move calendar event: {str(e)}"
-
-# ============================================================================
-# EMAIL MANAGEMENT FUNCTIONS
-# ============================================================================
-
-def delete_email(service, message_id):
-    """Delete an email permanently"""
-    if not service:
-        return "📧 Email deletion not available (no Gmail connection)"
-    
-    try:
-        # Get email details before deleting
-        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
-        headers = message['payload'].get('headers', [])
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-        
-        # Delete the message
-        service.users().messages().delete(userId='me', id=message_id).execute()
-        
-        return f"✅ Deleted email: '{subject}'"
-        
-    except Exception as e:
-        print(f"❌ Error deleting email: {e}")
-        return f"❌ Failed to delete email: {str(e)}"
-
-def archive_email(service, message_id):
-    """Archive an email (remove from inbox)"""
-    if not service:
-        return "📧 Email archiving not available (no Gmail connection)"
-    
-    try:
-        # Get email details
-        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
-        headers = message['payload'].get('headers', [])
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-        
-        # Remove INBOX label to archive
-        service.users().messages().modify(
-            userId='me',
-            id=message_id,
-            body={'removeLabelIds': ['INBOX']}
-        ).execute()
-        
-        return f"✅ Archived email: '{subject}'"
-        
-    except Exception as e:
-        print(f"❌ Error archiving email: {e}")
-        return f"❌ Failed to archive email: {str(e)}"
-
-def label_email(service, message_id, labels_to_add=None, labels_to_remove=None):
-    """Add or remove labels from an email"""
-    if not service:
-        return "📧 Email labeling not available (no Gmail connection)"
-    
-    try:
-        if labels_to_add is None:
-            labels_to_add = []
-        if labels_to_remove is None:
-            labels_to_remove = []
-        
-        # Get email details
-        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
-        headers = message['payload'].get('headers', [])
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-        
-        # Modify labels
-        modify_request = {}
-        if labels_to_add:
-            modify_request['addLabelIds'] = labels_to_add
-        if labels_to_remove:
-            modify_request['removeLabelIds'] = labels_to_remove
-        
-        service.users().messages().modify(
-            userId='me',
-            id=message_id,
-            body=modify_request
-        ).execute()
-        
-        action_desc = []
-        if labels_to_add:
-            action_desc.append(f"added labels: {', '.join(labels_to_add)}")
-        if labels_to_remove:
-            action_desc.append(f"removed labels: {', '.join(labels_to_remove)}")
-        
-        return f"✅ Updated email '{subject}': {'; '.join(action_desc)}"
-        
-    except Exception as e:
-        print(f"❌ Error labeling email: {e}")
-        return f"❌ Failed to label email: {str(e)}"
-
-def reply_to_email(service, message_id, reply_body, include_original=True):
-    """Reply to an email"""
-    if not service:
-        return "📧 Email reply not available (no Gmail connection)"
-    
-    try:
-        import email.mime.text
-        import email.mime.multipart
-        
-        # Get original message
-        original_message = service.users().messages().get(userId='me', id=message_id, format='full').execute()
-        headers = original_message['payload'].get('headers', [])
-        
-        original_subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-        original_from = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
-        original_to = next((h['value'] for h in headers if h['name'] == 'To'), '')
-        message_id_header = next((h['value'] for h in headers if h['name'] == 'Message-ID'), '')
-        
-        # Extract sender email from "Name <email>" format
-        import re
-        sender_match = re.search(r'<(.+?)>', original_from)
-        reply_to = sender_match.group(1) if sender_match else original_from
-        
-        # Create reply subject
-        reply_subject = original_subject if original_subject.startswith('Re: ') else f'Re: {original_subject}'
-        
-        # Create reply message
-        reply_message = email.mime.multipart.MIMEMultipart()
-        reply_message['to'] = reply_to
-        reply_message['subject'] = reply_subject
-        reply_message['in-reply-to'] = message_id_header
-        reply_message['references'] = message_id_header
-        
-        # Add reply body
-        full_reply_body = reply_body
-        if include_original:
-            original_body = extract_email_body(original_message['payload'])
-            full_reply_body += f"\n\n--- Original Message ---\nFrom: {original_from}\nSubject: {original_subject}\n\n{original_body}"
-        
-        msg_body = email.mime.text.MIMEText(full_reply_body)
-        reply_message.attach(msg_body)
-        
-        # Encode and send
-        raw_message = base64.urlsafe_b64encode(reply_message.as_bytes()).decode('utf-8')
-        
-        send_result = service.users().messages().send(
-            userId='me',
-            body={'raw': raw_message, 'threadId': original_message['threadId']}
-        ).execute()
-        
-        return f"✅ Sent reply to '{original_subject}'"
-        
-    except Exception as e:
-        print(f"❌ Error replying to email: {e}")
-        return f"❌ Failed to reply to email: {str(e)}"
-
-def mark_email_read(service, message_id):
-    """Mark an email as read"""
-    if not service:
-        return "📧 Email marking not available (no Gmail connection)"
-    
-    try:
-        # Get email details
-        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
-        headers = message['payload'].get('headers', [])
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-        
-        # Remove UNREAD label
-        service.users().messages().modify(
-            userId='me',
-            id=message_id,
-            body={'removeLabelIds': ['UNREAD']}
-        ).execute()
-        
-        return f"✅ Marked as read: '{subject}'"
-        
-    except Exception as e:
-        print(f"❌ Error marking email as read: {e}")
-        return f"❌ Failed to mark email as read: {str(e)}"
-
-def mark_email_unread(service, message_id):
-    """Mark an email as unread"""
-    if not service:
-        return "📧 Email marking not available (no Gmail connection)"
-    
-    try:
-        # Get email details
-        message = service.users().messages().get(userId='me', id=message_id, format='metadata').execute()
-        headers = message['payload'].get('headers', [])
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-        
-        # Add UNREAD label
-        service.users().messages().modify(
-            userId='me',
-            id=message_id,
-            body={'addLabelIds': ['UNREAD']}
-        ).execute()
-        
-        return f"✅ Marked as unread: '{subject}'"
-        
-    except Exception as e:
-        print(f"❌ Error marking email as unread: {e}")
-        return f"❌ Failed to mark email as unread: {str(e)}"
-
-# ============================================================================
-# FUNCTION EXECUTION (Enhanced with All Management Functions)
+# FUNCTION EXECUTION (Enhanced with All Functions)
 # ============================================================================
 
 def execute_function(function_name, arguments):
-    """Execute the called function and return results"""
+    """Execute the called function and return results with timezone support"""
+    
+    # Get local timezone for all date operations
+    local_tz = pytz.timezone(LOCAL_TIMEZONE)
     
     # Calendar Reading Functions
     if function_name == "get_today_schedule":
         events = get_calendar_events(calendar_service, days_ahead=1)
-        today = datetime.now().date()
-        today_events = [e for e in events if e['start_time'].date() == today]
+        today = datetime.now(local_tz).date()
         
-        print(f"🔍 DEBUG: Found {len(events)} total events, {len(today_events)} today events")
-        for event in today_events:
-            print(f"🔍 DEBUG: Today event - {event['title']} at {event['start_time']}")
+        today_events = []
+        for event in events:
+            try:
+                # Get event date with timezone handling
+                if hasattr(event['start_time'], 'date'):
+                    event_date = event['start_time'].date()
+                else:
+                    # Fallback parsing
+                    event_dt = datetime.fromisoformat(str(event['start_time']))
+                    if event_dt.tzinfo is None:
+                        event_dt = local_tz.localize(event_dt)
+                    event_date = event_dt.date()
+                
+                print(f"🔍 DEBUG: Event '{event['title']}' on {event_date}, today is {today}")
+                
+                if event_date == today:
+                    today_events.append(event)
+                    
+            except Exception as e:
+                print(f"⚠️ Error processing event date: {e}")
+                continue
+        
+        print(f"🔍 DEBUG: Found {len(events)} total events, {len(today_events)} for today")
         
         if not today_events:
-            result = "No events scheduled for today"
+            result = "No events scheduled for today - completely clear schedule"
         else:
-            event_list = []
+            event_lines = []
             for event in today_events:
-                time_str = event['start_time'].strftime('%I:%M %p')
-                attendee_info = f" (with {len(event['attendees'])} attendees)" if event['attendees'] else ""
-                event_list.append(f"• {time_str}: {event['title']} ({event['duration']}){attendee_info}")
-                if event['location']:
-                    event_list.append(f"  📍 {event['location']}")
+                try:
+                    # Format time
+                    if hasattr(event['start_time'], 'strftime'):
+                        time_str = event['start_time'].strftime('%I:%M %p')
+                    else:
+                        time_str = "All day"
+                    
+                    # Build event line
+                    event_line = f"• {time_str}: {event['title']}"
+                    if event['duration'] and event['duration'] != "All day":
+                        event_line += f" ({event['duration']})"
+                    
+                    event_lines.append(event_line)
+                    
+                    # Add location if present
+                    if event['location']:
+                        event_lines.append(f"  📍 {event['location']}")
+                        
+                except Exception as e:
+                    print(f"⚠️ Error formatting event: {e}")
+                    event_lines.append(f"• {event.get('title', 'Unknown event')}")
             
-            result = "📅 Today's Schedule:\n" + "\n".join(event_list)
+            result = f"Today's schedule ({len(today_events)} events):\n" + "\n".join(event_lines)
         
-        print(f"🔍 DEBUG: get_today_schedule returning: {result[:200]}...")
+        print(f"🔍 DEBUG: get_today_schedule final result: {result}")
         return result
     
     elif function_name == "get_tomorrow_schedule":
         events = get_calendar_events(calendar_service, days_ahead=2)
-        tomorrow = (datetime.now() + timedelta(days=1)).date()
-        tomorrow_events = [e for e in events if e['start_time'].date() == tomorrow]
+        tomorrow = (datetime.now(local_tz) + timedelta(days=1)).date()
+        
+        tomorrow_events = []
+        for event in events:
+            try:
+                if hasattr(event['start_time'], 'date'):
+                    event_date = event['start_time'].date()
+                else:
+                    event_dt = datetime.fromisoformat(str(event['start_time']))
+                    if event_dt.tzinfo is None:
+                        event_dt = local_tz.localize(event_dt)
+                    event_date = event_dt.date()
+                
+                if event_date == tomorrow:
+                    tomorrow_events.append(event)
+            except Exception as e:
+                print(f"⚠️ Error processing event: {e}")
+                continue
         
         print(f"🔍 DEBUG: Found {len(events)} total events, {len(tomorrow_events)} tomorrow events")
-        for event in tomorrow_events:
-            print(f"🔍 DEBUG: Tomorrow event - {event['title']} at {event['start_time']}")
         
         if not tomorrow_events:
-            result = "No events scheduled for tomorrow"
+            result = "No events scheduled for tomorrow - open day ahead"
         else:
-            event_list = []
+            event_lines = []
             for event in tomorrow_events:
-                time_str = event['start_time'].strftime('%I:%M %p')
-                attendee_info = f" (with {len(event['attendees'])} attendees)" if event['attendees'] else ""
-                event_list.append(f"• {time_str}: {event['title']} ({event['duration']}){attendee_info}")
-                if event['location']:
-                    event_list.append(f"  📍 {event['location']}")
+                try:
+                    if hasattr(event['start_time'], 'strftime'):
+                        time_str = event['start_time'].strftime('%I:%M %p')
+                    else:
+                        time_str = "All day"
+                    
+                    event_line = f"• {time_str}: {event['title']}"
+                    if event['duration'] and event['duration'] != "All day":
+                        event_line += f" ({event['duration']})"
+                    
+                    event_lines.append(event_line)
+                    
+                    if event['location']:
+                        event_lines.append(f"  📍 {event['location']}")
+                        
+                except Exception as e:
+                    event_lines.append(f"• {event.get('title', 'Event')}")
             
-            result = "📅 Tomorrow's Schedule:\n" + "\n".join(event_list)
+            result = f"Tomorrow's schedule ({len(tomorrow_events)} events):\n" + "\n".join(event_lines)
         
         print(f"🔍 DEBUG: get_tomorrow_schedule returning: {result[:200]}...")
         return result
@@ -915,43 +676,73 @@ def execute_function(function_name, arguments):
         if not events:
             result = f"No events found in the next {days} days"
         else:
-            event_list = []
-            today = datetime.now().date()
+            today = datetime.now(local_tz).date()
             
-            for event in events[:10]:
-                event_date = event['start_time'].date()
-                
-                if event_date == today:
-                    time_str = f"Today at {event['start_time'].strftime('%I:%M %p')}"
-                elif event_date == today + timedelta(days=1):
-                    time_str = f"Tomorrow at {event['start_time'].strftime('%I:%M %p')}"
-                else:
-                    time_str = event['start_time'].strftime('%m/%d at %I:%M %p')
-                
-                event_list.append(f"• {event['title']} - {time_str}")
+            event_lines = []
+            for event in events[:15]:  # Limit to 15 events for readability
+                try:
+                    if hasattr(event['start_time'], 'date'):
+                        event_date = event['start_time'].date()
+                    else:
+                        event_dt = datetime.fromisoformat(str(event['start_time']))
+                        if event_dt.tzinfo is None:
+                            event_dt = local_tz.localize(event_dt)
+                        event_date = event_dt.date()
+                    
+                    # Format date relative to today
+                    if event_date == today:
+                        date_str = "Today"
+                    elif event_date == today + timedelta(days=1):
+                        date_str = "Tomorrow"
+                    else:
+                        date_str = event_date.strftime('%m/%d')
+                    
+                    # Format time
+                    if hasattr(event['start_time'], 'strftime'):
+                        time_str = event['start_time'].strftime('%I:%M %p')
+                    else:
+                        time_str = "All day"
+                    
+                    event_lines.append(f"• {date_str} at {time_str}: {event['title']}")
+                    
+                except Exception as e:
+                    event_lines.append(f"• {event.get('title', 'Event')}")
             
-            if len(event_list) > 10:
-                event_list = event_list[:10]
-                event_list.append("... and more")
+            if len(events) > 15:
+                event_lines.append(f"... and {len(events) - 15} more events")
             
-            result = f"📅 Upcoming Events (Next {days} days):\n" + "\n".join(event_list)
+            result = f"Upcoming events (next {days} days, {len(events)} total):\n" + "\n".join(event_lines)
         
         print(f"🔍 DEBUG: get_upcoming_events returning: {result[:200]}...")
         return result
     
     elif function_name == "find_free_time":
         duration = arguments.get('duration', 60)
-        date_str = arguments.get('date', datetime.now().strftime('%Y-%m-%d'))
+        date_str = arguments.get('date', datetime.now(local_tz).strftime('%Y-%m-%d'))
         
         try:
             target_date = datetime.strptime(date_str, '%Y-%m-%d')
+            target_date = local_tz.localize(target_date)
         except:
-            target_date = datetime.now()
+            target_date = datetime.now(local_tz)
         
-        days_ahead = max(1, (target_date.date() - datetime.now().date()).days + 1)
+        days_ahead = max(1, (target_date.date() - datetime.now(local_tz).date()).days + 1)
         events = get_calendar_events(calendar_service, days_ahead=days_ahead)
         
-        target_events = [e for e in events if e['start_time'].date() == target_date.date()]
+        target_events = []
+        for event in events:
+            try:
+                if hasattr(event['start_time'], 'date'):
+                    if event['start_time'].date() == target_date.date():
+                        target_events.append(event)
+                else:
+                    event_dt = datetime.fromisoformat(str(event['start_time']))
+                    if event_dt.tzinfo is None:
+                        event_dt = local_tz.localize(event_dt)
+                    if event_dt.date() == target_date.date():
+                        target_events.append(event)
+            except:
+                continue
         
         # Simple free time finding logic
         free_slots = []
@@ -997,63 +788,6 @@ def execute_function(function_name, arguments):
             result = f"⏰ Free time slots on {target_date.strftime('%Y-%m-%d')} ({duration}+ min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
         
         print(f"🔍 DEBUG: find_free_time returning: {result[:200]}...")
-        return result
-    
-    # Calendar Management Functions
-    elif function_name == "create_calendar_event":
-        title = arguments.get('title', '')
-        start_datetime = arguments.get('start_datetime', '')
-        end_datetime = arguments.get('end_datetime', '')
-        description = arguments.get('description', '')
-        location = arguments.get('location', '')
-        attendees = arguments.get('attendees', [])
-        
-        if not title or not start_datetime:
-            result = "Missing required fields: title and start_datetime are required"
-        else:
-            result = create_calendar_event(calendar_service, title, start_datetime, end_datetime, description, location, attendees)
-        
-        print(f"🔍 DEBUG: create_calendar_event returning: {result}")
-        return result
-    
-    elif function_name == "update_calendar_event":
-        event_id = arguments.get('event_id', '')
-        title = arguments.get('title')
-        start_datetime = arguments.get('start_datetime')
-        end_datetime = arguments.get('end_datetime')
-        description = arguments.get('description')
-        location = arguments.get('location')
-        
-        if not event_id:
-            result = "Missing required field: event_id is required"
-        else:
-            result = update_calendar_event(calendar_service, event_id, title, start_datetime, end_datetime, description, location)
-        
-        print(f"🔍 DEBUG: update_calendar_event returning: {result}")
-        return result
-    
-    elif function_name == "delete_calendar_event":
-        event_id = arguments.get('event_id', '')
-        
-        if not event_id:
-            result = "Missing required field: event_id is required"
-        else:
-            result = delete_calendar_event(calendar_service, event_id)
-        
-        print(f"🔍 DEBUG: delete_calendar_event returning: {result}")
-        return result
-    
-    elif function_name == "move_calendar_event":
-        event_id = arguments.get('event_id', '')
-        new_start_datetime = arguments.get('new_start_datetime', '')
-        new_end_datetime = arguments.get('new_end_datetime')
-        
-        if not event_id or not new_start_datetime:
-            result = "Missing required fields: event_id and new_start_datetime are required"
-        else:
-            result = move_calendar_event(calendar_service, event_id, new_start_datetime, new_end_datetime)
-        
-        print(f"🔍 DEBUG: move_calendar_event returning: {result}")
         return result
     
     # Email Reading Functions
@@ -1118,77 +852,6 @@ def execute_function(function_name, arguments):
         print(f"🔍 DEBUG: send_email returning: {result[:200]}...")
         return result
     
-    # Email Management Functions
-    elif function_name == "delete_email":
-        message_id = arguments.get('message_id', '')
-        
-        if not message_id:
-            result = "Missing required field: message_id is required"
-        else:
-            result = delete_email(gmail_service, message_id)
-        
-        print(f"🔍 DEBUG: delete_email returning: {result}")
-        return result
-    
-    elif function_name == "archive_email":
-        message_id = arguments.get('message_id', '')
-        
-        if not message_id:
-            result = "Missing required field: message_id is required"
-        else:
-            result = archive_email(gmail_service, message_id)
-        
-        print(f"🔍 DEBUG: archive_email returning: {result}")
-        return result
-    
-    elif function_name == "label_email":
-        message_id = arguments.get('message_id', '')
-        labels_to_add = arguments.get('labels_to_add', [])
-        labels_to_remove = arguments.get('labels_to_remove', [])
-        
-        if not message_id:
-            result = "Missing required field: message_id is required"
-        else:
-            result = label_email(gmail_service, message_id, labels_to_add, labels_to_remove)
-        
-        print(f"🔍 DEBUG: label_email returning: {result}")
-        return result
-    
-    elif function_name == "reply_to_email":
-        message_id = arguments.get('message_id', '')
-        reply_body = arguments.get('reply_body', '')
-        include_original = arguments.get('include_original', True)
-        
-        if not message_id or not reply_body:
-            result = "Missing required fields: message_id and reply_body are required"
-        else:
-            result = reply_to_email(gmail_service, message_id, reply_body, include_original)
-        
-        print(f"🔍 DEBUG: reply_to_email returning: {result}")
-        return result
-    
-    elif function_name == "mark_email_read":
-        message_id = arguments.get('message_id', '')
-        
-        if not message_id:
-            result = "Missing required field: message_id is required"
-        else:
-            result = mark_email_read(gmail_service, message_id)
-        
-        print(f"🔍 DEBUG: mark_email_read returning: {result}")
-        return result
-    
-    elif function_name == "mark_email_unread":
-        message_id = arguments.get('message_id', '')
-        
-        if not message_id:
-            result = "Missing required field: message_id is required"
-        else:
-            result = mark_email_unread(gmail_service, message_id)
-        
-        print(f"🔍 DEBUG: mark_email_unread returning: {result}")
-        return result
-    
     else:
         result = f"Unknown function: {function_name}"
         print(f"🔍 DEBUG: Unknown function {function_name}")
@@ -1229,46 +892,36 @@ def should_give_detailed_response(user_message):
     
     return any(trigger in user_message.lower() for trigger in detail_triggers)
 
-def format_for_discord(response, is_detailed=False):
-    """Clean up response for Discord formatting"""
+def format_for_discord_vivian(response):
+    """Format response specifically for Vivian's PR/communications focus"""
     
-    # Remove excessive line breaks
-    response = response.replace('\n\n\n', '\n\n')
-    response = response.replace('\n\n\n\n', '\n\n')
+    # Remove excessive formatting for readability
+    response = response.replace('**', '')  # Remove all bold formatting initially
+    response = response.replace('\n\n\n', '\n\n')  # Remove triple line breaks
+    response = response.replace('\n\n\n\n', '\n\n')  # Remove quadruple line breaks
     
-    # Remove bold from every concept (too much bolding)
-    bold_count = response.count('**')
-    if bold_count > 6:  # More than 3 bold phrases
-        # Keep only the first 2 bold phrases
-        parts = response.split('**')
-        new_response = parts[0]
-        bold_used = 0
-        for i in range(1, len(parts)):
-            if bold_used < 4:  # Keep first 2 bold phrases (4 asterisks)
-                new_response += '**' + parts[i]
-                bold_used += 1
-            else:
-                new_response += parts[i]
-        response = new_response
+    # Add strategic emoji headers for key sections
+    if 'schedule' in response.lower() or 'calendar' in response.lower():
+        if response.startswith('📅'):
+            pass  # Already has calendar emoji
+        elif 'no events' in response.lower() or 'clear schedule' in response.lower():
+            response = '📅 **Clear Calendar** \n\n' + response
+        else:
+            response = '📅 **Schedule Update** \n\n' + response
     
-    # Different length limits based on detail level
-    if is_detailed:
-        max_length = 3000  # Allow longer responses when details requested
-    else:
-        max_length = 1500  # Keep responses focused for productivity
+    # Add email headers
+    if 'email' in response.lower() and not response.startswith('📧'):
+        response = '📧 **Email Update** \n\n' + response
     
-    if len(response) > max_length:
-        # Find a good breaking point
+    # Limit length but keep it strategic
+    if len(response) > 1800:
         sentences = response.split('. ')
         truncated = ""
         for sentence in sentences:
-            if len(truncated + sentence + '. ') < (max_length - 100):
+            if len(truncated + sentence + '. ') < 1700:
                 truncated += sentence + '. '
             else:
-                if is_detailed:
-                    truncated += "\n\n*Want me to continue with more details on any specific aspect?*"
-                else:
-                    truncated += "\n\n*Need more details? Just ask!*"
+                truncated += "\n\n💡 *Need more details? Just ask!*"
                 break
         response = truncated
     
@@ -1294,17 +947,20 @@ async def get_openai_response(user_message: str, user_id: int, clear_memory: boo
         # Clean the user message (remove bot mentions)
         clean_message = user_message.replace(f'<@{os.getenv("BOT_USER_ID", "")}>', '').strip()
         
-        # Enhanced message with conversation context
+        # Enhanced message with conversation context and strict function requirements
         enhanced_message = f"""CONVERSATION CONTEXT:
 {conversation_history}
 
 CURRENT REQUEST: {clean_message}
 
-INSTRUCTIONS:
+CRITICAL INSTRUCTIONS:
 - This is a continuing conversation - refer to previous context when relevant
-- You are Vivian, a strategic productivity assistant
-- For calendar/schedule questions, use calendar functions
-- For email questions, use email functions  
+- You are Vivian Spencer, a strategic productivity assistant focused on PR and communications
+- For calendar/schedule questions, you MUST use calendar functions
+- For email questions, you MUST use email functions  
+- You MUST base your response entirely on actual function results
+- DO NOT invent or assume any calendar events or email information
+- If a function returns "no events" or "no emails", that is the factual truth
 - Provide actionable insights focused on productivity and efficiency
 - Be conversational but strategic
 - Remember our conversation history and build on previous discussions"""
@@ -1328,6 +984,9 @@ INSTRUCTIONS:
         else:
             instructions = "You are Vivian Spencer, a strategic productivity assistant. Keep responses conversational and focused (800-1500 chars). Think like a smart executive assistant - strategic but approachable. When users ask about calendar/schedule/emails, use the available functions, then provide strategic insights about their time and communication patterns."
             additional = "Sound strategic but human. Focus on actionable productivity insights. Use functions for calendar/email queries, then analyze patterns strategically. Less corporate speak, more strategic friend."
+
+        # Add strict function usage requirements
+        additional += " MANDATORY: Use calendar functions for ANY calendar/schedule question. Use email functions for ANY email question. Base responses entirely on function results. Never fabricate data."
 
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
@@ -1354,27 +1013,38 @@ INSTRUCTIONS:
                 continue
             elif run_status.status == "failed":
                 print(f"❌ Run failed: {run_status.last_error}")
-                raise Exception("❌ Run failed.")
+                return "❌ Sorry, there was an error processing your request. Please try again."
+            elif run_status.status in ["cancelled", "expired"]:
+                print(f"❌ Run {run_status.status}")
+                return "❌ Request was cancelled or expired. Please try again."
             
             await asyncio.sleep(1)
         else:
-            raise TimeoutError("⏱️ Timed out waiting for assistant to complete.")
+            return "⏱️ Request timed out. Please try again with a simpler question."
         
-        # Get response
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
-        for msg in reversed(messages.data):
+        # Get response - find the latest assistant message
+        messages = client.beta.threads.messages.list(thread_id=thread_id, limit=10)
+        
+        latest_assistant_message = None
+        for msg in messages.data:
             if msg.role == "assistant":
-                response = msg.content[0].text.value
-                print(f"✅ Got response: {response[:100]}...")
-                
-                # Add to conversation context
-                add_to_context(user_id, response, is_user=False)
-                
-                # Apply Discord formatting and return
-                return format_for_discord(response, wants_detail)
+                latest_assistant_message = msg
+                break
+        
+        if latest_assistant_message and latest_assistant_message.content:
+            response = latest_assistant_message.content[0].text.value
+            print(f"✅ Got response: {response[:100]}...")
+            
+            # Add to conversation context
+            add_to_context(user_id, response, is_user=False)
+            
+            # Apply Discord formatting and return
+            return format_for_discord_vivian(response)
         
         return "⚠️ No assistant response found."
         
     except Exception as e:
         print(f"❌ An error occurred: {e}")
-        return "An error occurred while communicating with the assistant."
+        import traceback
+        print(f"📋 Full traceback: {traceback.format_exc()}")
+        return "❌ An error occurred while communicating with the assistant. Please try again."
