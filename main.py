@@ -10,6 +10,34 @@ from utils.openai_handler import get_openai_response
 # Load environment variables
 load_dotenv()
 
+# TEMPORARY: Run assistant fix on startup
+async def run_assistant_fix():
+    """Run the assistant fix script on startup"""
+    print("🔧 Running Vivian assistant fix...")
+    try:
+        import subprocess
+        result = subprocess.run(['python3', 'fix_vivian_assistant.py'], 
+                              capture_output=True, text=True, timeout=30)
+        
+        print("📋 Fix script output:")
+        print(result.stdout)
+        
+        if result.stderr:
+            print("⚠️ Fix script warnings/errors:")
+            print(result.stderr)
+            
+        if result.returncode == 0:
+            print("✅ Assistant fix completed successfully!")
+        else:
+            print(f"❌ Assistant fix failed with return code: {result.returncode}")
+            
+    except subprocess.TimeoutExpired:
+        print("⏱️ Assistant fix timed out after 30 seconds")
+    except Exception as e:
+        print(f"❌ Error running assistant fix: {e}")
+    
+    print("🚀 Continuing with bot startup...")
+
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 BRAVE_API_KEY = os.getenv('BRAVE_API_KEY')
 
@@ -118,6 +146,7 @@ async def ping(ctx):
 @bot.command(name='status')
 async def status(ctx):
     """Show comprehensive bot status"""
+    latency = round(bot.latency * 1000)
     embed = discord.Embed(
         title="🤖 Vivian Status - Productivity Assistant",
         description="Calendar + Email + Research + Memory",
@@ -446,7 +475,14 @@ if __name__ == "__main__":
         exit(1)
     
     print("🚀 Starting Enhanced Vivian with unified capabilities...")
-    try:
-        bot.run(DISCORD_TOKEN)
-    except Exception as e:
-        print(f"❌ Failed to start bot: {e}")
+    
+    # Run the assistant fix before starting the bot
+    async def startup():
+        await run_assistant_fix()
+        try:
+            await bot.start(DISCORD_TOKEN)
+        except Exception as e:
+            print(f"❌ Failed to start bot: {e}")
+    
+    # Run the startup sequence
+    asyncio.run(startup())
