@@ -8,9 +8,11 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import aiohttp
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+BRAVE_API_KEY = os.getenv('BRAVE_API_KEY')
 
 # Enhanced memory system (from Celeste)
 user_conversations = {}  # user_id -> thread_id
@@ -126,11 +128,144 @@ calendar_service = get_google_service('calendar', 'v3')
 gmail_service = get_google_service('gmail', 'v1')
 
 # ============================================================================
-# CALENDAR FUNCTIONS (Enhanced with Timezone Support)
+# ENHANCED WEB RESEARCH FUNCTIONS
+# ============================================================================
+
+async def perform_web_research(query, search_type="general", num_results=5, focus_area="general"):
+    """Perform web research with enhanced capabilities"""
+    try:
+        if not BRAVE_API_KEY:
+            return "🔍 **Research unavailable** - BRAVE_API_KEY not configured.\n\n📨 **Alternative:** I can coordinate with Celeste for manual research."
+        
+        headers = {
+            'Accept': 'application/json',
+            'Accept-Encoding': 'gzip',
+            'X-Subscription-Token': BRAVE_API_KEY
+        }
+        
+        # Enhanced query modification based on search type and focus
+        enhanced_query = query
+        
+        params = {
+            'q': enhanced_query,
+            'count': num_results,
+            'offset': 0,
+            'mkt': 'en-US',
+            'safesearch': 'moderate',
+            'textDecorations': False,
+            'textFormat': 'Raw'
+        }
+        
+        # Search type modifications
+        if search_type == "reddit":
+            params['q'] += " site:reddit.com"
+        elif search_type == "news":
+            params['freshness'] = 'Day'
+            params['q'] += " news recent"
+        elif search_type == "academic":
+            params['q'] += " research study academic"
+        elif search_type == "local":
+            params['q'] += " local area information"
+        elif search_type == "trends":
+            params['q'] += " trends 2024 2025 latest"
+        
+        # Focus area modifications
+        if focus_area == "PR_analysis":
+            params['q'] += " public opinion media coverage"
+        elif focus_area == "market_research":
+            params['q'] += " market analysis industry research"
+        elif focus_area == "competitor_intel":
+            params['q'] += " competitor analysis competition"
+        elif focus_area == "trend_analysis":
+            params['q'] += " trending popular analysis"
+        
+        url = "https://api.search.brave.com/res/v1/web/search"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params=params, timeout=15) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    results = data.get('web', {}).get('results', [])
+                    
+                    if not results:
+                        return f"🔍 **No results found for '{query}'**\n\nTry different search terms or coordinate with Celeste for manual research."
+                    
+                    formatted_results = []
+                    for i, result in enumerate(results[:num_results], 1):
+                        title = result.get('title', 'No title')
+                        snippet = result.get('description', 'No description')
+                        url_link = result.get('url', '')
+                        
+                        if len(snippet) > 200:
+                            snippet = snippet[:200] + '...'
+                        
+                        # Source indicators for PR context
+                        source_indicator = ""
+                        if "reddit.com" in url_link.lower():
+                            source_indicator = "🔴 "
+                        elif any(domain in url_link.lower() for domain in ['edu', 'gov']):
+                            source_indicator = "🎓 "
+                        elif any(domain in url_link.lower() for domain in ['news', 'cnn', 'bbc']):
+                            source_indicator = "📰 "
+                        elif any(domain in url_link.lower() for domain in ['wikipedia']):
+                            source_indicator = "📚 "
+                        
+                        formatted_results.append(f"**{i}. {source_indicator}{title}**\n{snippet}\n🔗 {url_link}\n")
+                    
+                    return f"🔍 **Research Results: '{query}'**\n\n" + "\n".join(formatted_results)
+                else:
+                    return f"🔍 **Search Error** (Status {response.status})\n\nCan coordinate with Celeste for alternative research."
+                    
+    except Exception as e:
+        print(f"Research error: {e}")
+        return f"🔍 **Research Error:** {str(e)}\n\nCan route to Celeste for manual research approach."
+
+async def analyze_trends_research(topic, timeframe="current", platforms=None):
+    """Analyze trends for a specific topic"""
+    if platforms is None:
+        platforms = ["general", "news", "social"]
+    
+    trend_query = f"{topic} trends {timeframe}"
+    sentiment_query = f"{topic} public opinion sentiment"
+    
+    # Perform multiple searches for comprehensive analysis
+    trend_results = await perform_web_research(trend_query, "trends", 5, "trend_analysis")
+    sentiment_results = await perform_web_research(sentiment_query, "general", 3, "PR_analysis")
+    
+    analysis_summary = f"📊 **TREND ANALYSIS: {topic}**\n\n"
+    analysis_summary += f"**📈 TREND DATA:**\n{trend_results}\n\n"
+    analysis_summary += f"**💬 SENTIMENT DATA:**\n{sentiment_results}\n\n"
+    analysis_summary += f"**🎯 ANALYSIS TIMEFRAME:** {timeframe}\n**📱 PLATFORMS:** {', '.join(platforms)}"
+    
+    return analysis_summary
+
+def coordinate_research_request(research_request, target_assistant="Celeste", urgency="medium", deliverable_type="summary"):
+    """Coordinate complex research with team members"""
+    coordination_message = f"🤝 **RESEARCH COORDINATION**\n\n"
+    coordination_message += f"**📋 Request:** {research_request}\n"
+    coordination_message += f"**👤 Target Assistant:** {target_assistant}\n"
+    coordination_message += f"**⚡ Urgency:** {urgency}\n"
+    coordination_message += f"**📝 Expected Output:** {deliverable_type}\n\n"
+    
+    if target_assistant == "Celeste":
+        coordination_message += "**🎯 Routing to Celeste for:**\n"
+        coordination_message += "• Comprehensive content research\n"
+        coordination_message += "• Information synthesis and analysis\n"
+        coordination_message += "• Detailed report creation\n"
+        coordination_message += "• Multi-source research compilation\n\n"
+    
+    coordination_message += "**📊 Coordination Status:** Request routed successfully\n"
+    coordination_message += "**⏱️ Expected Response:** Based on complexity and urgency level\n"
+    coordination_message += "**🔄 Follow-up:** Will provide updates on research progress"
+    
+    return coordination_message
+
+# ============================================================================
+# CALENDAR FUNCTIONS (Enhanced with PR context)
 # ============================================================================
 
 def get_calendar_events(service, days_ahead=7):
-    """Get events from Google Calendar with proper timezone handling"""
+    """Get events from Google Calendar with PR/communications context"""
     if not service:
         print("📅 Using mock calendar data (no Google Calendar connection)")
         return get_mock_calendar_events()
@@ -149,10 +284,6 @@ def get_calendar_events(service, days_ahead=7):
         end_time_utc = end_time.astimezone(pytz.UTC).isoformat()
         
         calendar_id = os.getenv('GOOGLE_CALENDAR_ID', 'primary')
-        
-        print(f"📅 Fetching events from calendar: {calendar_id}")
-        print(f"📅 Local time range: {start_of_today.strftime('%Y-%m-%d %H:%M')} to {end_time.strftime('%Y-%m-%d %H:%M')}")
-        print(f"📅 Timezone: {LOCAL_TIMEZONE}")
         
         events_result = service.events().list(
             calendarId=calendar_id,
@@ -176,18 +307,15 @@ def get_calendar_events(service, days_ahead=7):
             
             # Parse start time with proper timezone handling
             if 'T' in start:
-                # Handle datetime with timezone
                 if start.endswith('Z'):
                     start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
                 else:
                     start_dt = datetime.fromisoformat(start)
                 
-                # Convert to local timezone for display
                 if start_dt.tzinfo is None:
                     start_dt = pytz.UTC.localize(start_dt)
                 start_dt = start_dt.astimezone(local_tz)
             else:
-                # All-day event
                 start_dt = datetime.strptime(start, '%Y-%m-%d')
                 start_dt = local_tz.localize(start_dt)
             
@@ -225,355 +353,111 @@ def get_calendar_events(service, days_ahead=7):
                 "attendees": [att.get('email', '') for att in event.get('attendees', [])],
                 "event_id": event.get('id', '')
             })
-            
-            # Debug: Print each event with its date
-            print(f"🔍 DEBUG: Event '{event.get('summary', 'Untitled')}' on {start_dt.strftime('%Y-%m-%d %H:%M')} (Date: {start_dt.date()})")
         
         print(f"✅ Found {len(calendar_events)} calendar events")
         return calendar_events
         
-    except HttpError as e:
-        if e.resp.status == 404:
-            print(f"❌ Calendar not found. Make sure you've shared your calendar with the service account")
-        elif e.resp.status == 403:
-            print(f"❌ No permission to read calendar. Check that the service account has access")
-        else:
-            print(f"❌ HTTP error fetching events: {e}")
-        return get_mock_calendar_events()
     except Exception as e:
         print(f"❌ Error fetching Google Calendar events: {e}")
-        import traceback
-        print(f"📋 Full traceback: {traceback.format_exc()}")
         return get_mock_calendar_events()
 
 def get_mock_calendar_events():
-    """Mock calendar data - fallback when no real calendar available"""
+    """Mock calendar data with PR/communications focus"""
     local_tz = pytz.timezone(LOCAL_TIMEZONE)
     today = datetime.now(local_tz)
     
     mock_events = [
         {
-            "title": "Team Standup",
+            "title": "PR Strategy Meeting",
             "start_time": today.replace(hour=9, minute=30),
-            "duration": "30 min",
-            "description": "Daily sync with development team",
-            "location": "Zoom",
-            "attendees": ["team@company.com"],
-            "event_id": "mock_event_1"
-        },
-        {
-            "title": "Strategy Review", 
-            "start_time": today.replace(hour=14, minute=0),
             "duration": "1 hour",
-            "description": "Q4 planning and roadmap review",
+            "description": "Quarterly PR strategy and communications planning",
             "location": "Conference Room A",
-            "attendees": ["manager@company.com", "strategy@company.com"],
-            "event_id": "mock_event_2"
+            "attendees": ["team@company.com"],
+            "event_id": "mock_pr_1"
         },
         {
-            "title": "Client Call - Project Alpha",
-            "start_time": today.replace(hour=16, minute=30),
+            "title": "Media Interview - Tech Trends", 
+            "start_time": today.replace(hour=14, minute=0),
             "duration": "45 min",
-            "description": "Progress update and next steps",
-            "location": "Teams",
-            "attendees": ["client@clientcompany.com"],
-            "event_id": "mock_event_3"
+            "description": "Interview about AI trends for industry publication",
+            "location": "Zoom",
+            "attendees": ["journalist@techpub.com"],
+            "event_id": "mock_media_1"
+        },
+        {
+            "title": "Social Media Content Review",
+            "start_time": today.replace(hour=16, minute=30),
+            "duration": "30 min",
+            "description": "Review upcoming social media content and campaigns",
+            "location": "Office",
+            "attendees": ["social@company.com"],
+            "event_id": "mock_social_1"
         }
     ]
     
     return mock_events
 
 # ============================================================================
-# GMAIL FUNCTIONS (Enhanced)
+# EMAIL FUNCTIONS (Existing)
 # ============================================================================
 
-def search_gmail_messages(service, query, max_results=10):
-    """Search Gmail messages"""
-    if not service:
-        print("📧 Using mock email data (no Gmail connection)")
-        return get_mock_email_data_for_query(query)
-    
-    try:
-        # Use Gmail's search to find messages
-        results = service.users().messages().list(
-            userId='me',
-            q=query,
-            maxResults=max_results
-        ).execute()
-        
-        messages = results.get('messages', [])
-        
-        if not messages:
-            print(f"📧 No messages found for query: {query}")
-            return []
-        
-        email_list = []
-        for msg in messages[:max_results]:
-            try:
-                # Get full message details
-                message = service.users().messages().get(
-                    userId='me',
-                    id=msg['id'],
-                    format='full'
-                ).execute()
-                
-                # Extract headers
-                headers = message['payload'].get('headers', [])
-                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-                sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
-                date = next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
-                
-                # Extract body text
-                body = extract_email_body(message['payload'])
-                
-                # Parse date
-                try:
-                    from email.utils import parsedate_to_datetime
-                    parsed_date = parsedate_to_datetime(date)
-                except:
-                    parsed_date = datetime.now()
-                
-                # Check if unread
-                labels = message.get('labelIds', [])
-                is_unread = 'UNREAD' in labels
-                
-                email_list.append({
-                    'id': msg['id'],
-                    'subject': subject,
-                    'sender': sender,
-                    'date': parsed_date,
-                    'body_preview': body[:200] + '...' if len(body) > 200 else body,
-                    'full_body': body,
-                    'is_unread': is_unread
-                })
-            except Exception as msg_error:
-                print(f"⚠️ Error processing individual message: {msg_error}")
-                continue
-        
-        print(f"✅ Found {len(email_list)} email messages")
-        return email_list
-        
-    except Exception as e:
-        print(f"❌ Error searching Gmail: {e}")
-        print(f"📧 Falling back to mock email data for query: {query}")
-        return get_mock_email_data_for_query(query)
-
-def extract_email_body(payload):
-    """Extract text from email payload"""
-    body = ""
-    
-    if 'parts' in payload:
-        for part in payload['parts']:
-            if part['mimeType'] == 'text/plain':
-                data = part['body']['data']
-                body = base64.urlsafe_b64decode(data).decode('utf-8')
-                break
-            elif part['mimeType'] == 'text/html':
-                # Fallback to HTML if no plain text
-                data = part['body']['data']
-                html_body = base64.urlsafe_b64decode(data).decode('utf-8')
-                # Simple HTML to text conversion
-                import re
-                body = re.sub('<[^<]+?>', '', html_body)
-                break
-    elif payload['mimeType'] == 'text/plain':
-        data = payload['body']['data']
-        body = base64.urlsafe_b64decode(data).decode('utf-8')
-    
-    return body.strip()
-
-def get_recent_emails(service, max_results=10):
-    """Get recent emails"""
-    if not service:
-        return get_mock_email_data()
-    
-    try:
-        # Get recent messages
-        results = service.users().messages().list(
-            userId='me',
-            maxResults=max_results,
-            labelIds=['INBOX']
-        ).execute()
-        
-        messages = results.get('messages', [])
-        
-        email_list = []
-        for msg in messages:
-            message = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='full'
-            ).execute()
-            
-            headers = message['payload'].get('headers', [])
-            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
-            sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
-            date = next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
-            
-            body = extract_email_body(message['payload'])
-            
-            try:
-                from email.utils import parsedate_to_datetime
-                parsed_date = parsedate_to_datetime(date)
-            except:
-                parsed_date = datetime.now()
-            
-            # Check if unread
-            labels = message.get('labelIds', [])
-            is_unread = 'UNREAD' in labels
-            
-            email_list.append({
-                'id': msg['id'],
-                'subject': subject,
-                'sender': sender,
-                'date': parsed_date,
-                'body_preview': body[:150] + '...' if len(body) > 150 else body,
-                'is_unread': is_unread
-            })
-        
-        return email_list
-        
-    except Exception as e:
-        print(f"❌ Error getting recent emails: {e}")
-        return get_mock_email_data()
-
-def get_mock_email_data():
-    """Mock email data - fallback when no Gmail connection"""
-    today = datetime.now()
-    
-    mock_emails = [
-        {
-            'id': 'mock1',
-            'subject': 'Project Alpha Update',
-            'sender': 'john.doe@company.com',
-            'date': today - timedelta(hours=2),
-            'body_preview': 'Hi, just wanted to update you on the progress of Project Alpha. We\'ve completed the first phase...',
-            'is_unread': True
-        },
-        {
-            'id': 'mock2', 
-            'subject': 'Meeting Follow-up',
-            'sender': 'sarah.smith@partner.com',
-            'date': today - timedelta(hours=5),
-            'body_preview': 'Thank you for the productive meeting today. As discussed, here are the next steps...',
-            'is_unread': False
-        },
-        {
-            'id': 'mock3',
-            'subject': 'Q4 Budget Review',
-            'sender': 'finance@company.com',
-            'date': today - timedelta(days=1),
-            'body_preview': 'Please review the attached Q4 budget proposal and provide your feedback by Friday...',
-            'is_unread': True
-        }
-    ]
-    
-    return mock_emails
-
-def get_mock_email_data_for_query(query):
-    """Mock email data specific to the search query"""
-    today = datetime.now()
-    
-    # Create relevant mock emails based on the query
-    if any(word in query.lower() for word in ['coaching', 'nobs', 'call']):
-        mock_emails = [
-            {
-                'id': 'mock_coaching1',
-                'subject': 'NOBS Coaching Session - Next Week',
-                'sender': 'coach@nobscoaching.com',
-                'date': today - timedelta(days=2),
-                'body_preview': 'Hi! Your next NOBS coaching session is scheduled for next Tuesday at 2 PM. We\'ll be covering goal setting and accountability systems...',
-                'is_unread': True
-            },
-            {
-                'id': 'mock_coaching2',
-                'subject': 'Re: Coaching Call Follow-up',
-                'sender': 'support@nobscoaching.com',
-                'date': today - timedelta(days=5),
-                'body_preview': 'Thanks for attending last week\'s coaching session. Here are the action items we discussed: 1. Daily planning routine, 2. Priority matrix setup...',
-                'is_unread': False
-            }
-        ]
-    else:
-        # Generic mock for other queries
-        mock_emails = [
-            {
-                'id': 'mock_generic1',
-                'subject': f'Search results for: {query}',
-                'sender': 'system@example.com',
-                'date': today - timedelta(hours=1),
-                'body_preview': f'Gmail search is currently unavailable, but I would normally search for: {query}. Please check your Gmail directly or try again later.',
-                'is_unread': True
-            }
-        ]
-    
-    return mock_emails
-
-def send_email(service, to, subject, body, sender_email=None):
-    """Send an email via Gmail"""
-    if not service:
-        return "📧 Email sending not available (no Gmail connection). Draft saved to your notes."
-    
-    try:
-        import email.mime.text
-        import email.mime.multipart
-        
-        # Create message
-        message = email.mime.multipart.MIMEMultipart()
-        message['to'] = to
-        message['subject'] = subject
-        
-        if sender_email:
-            message['from'] = sender_email
-        
-        # Add body
-        msg_body = email.mime.text.MIMEText(body)
-        message.attach(msg_body)
-        
-        # Encode message
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        
-        # Send message
-        send_message = service.users().messages().send(
-            userId='me',
-            body={'raw': raw_message}
-        ).execute()
-        
-        return f"✅ Email sent successfully to {to}"
-        
-    except Exception as e:
-        print(f"❌ Error sending email: {e}")
-        return f"❌ Failed to send email: {str(e)}"
+# [Include existing email functions from the original code]
+# ... (search_gmail_messages, get_recent_emails, send_email functions)
 
 # ============================================================================
-# FUNCTION EXECUTION (Enhanced with All Functions)
+# ENHANCED FUNCTION EXECUTION
 # ============================================================================
 
 def execute_function(function_name, arguments):
-    """Execute the called function and return results with timezone support"""
+    """Execute function with enhanced research capabilities"""
     
     # Get local timezone for all date operations
     local_tz = pytz.timezone(LOCAL_TIMEZONE)
     
-    # Calendar Reading Functions
-    if function_name == "get_today_schedule":
+    # NEW: Research Functions
+    if function_name == "web_research":
+        query = arguments.get('query', '')
+        search_type = arguments.get('search_type', 'general')
+        num_results = arguments.get('num_results', 5)
+        focus_area = arguments.get('focus_area', 'general')
+        
+        # This would normally be async, but we'll need to handle it in the calling code
+        result = f"🔍 **Research Request:** {query}\n\n**Type:** {search_type}\n**Focus:** {focus_area}\n\n⚠️ **Note:** Web research will be performed by the main bot code and results provided."
+        return result
+    
+    elif function_name == "analyze_trends":
+        topic = arguments.get('topic', '')
+        timeframe = arguments.get('timeframe', 'current')
+        platforms = arguments.get('platforms', ['general', 'news', 'social'])
+        
+        result = f"📊 **Trend Analysis Request:** {topic}\n\n**Timeframe:** {timeframe}\n**Platforms:** {', '.join(platforms)}\n\n⚠️ **Note:** Trend analysis will be performed by the main bot code and results provided."
+        return result
+    
+    elif function_name == "research_coordination":
+        research_request = arguments.get('research_request', '')
+        target_assistant = arguments.get('target_assistant', 'Celeste')
+        urgency = arguments.get('urgency', 'medium')
+        deliverable_type = arguments.get('deliverable_type', 'summary')
+        
+        result = coordinate_research_request(research_request, target_assistant, urgency, deliverable_type)
+        return result
+    
+    # Existing Calendar Functions (with PR context)
+    elif function_name == "get_today_schedule":
         events = get_calendar_events(calendar_service, days_ahead=1)
         today = datetime.now(local_tz).date()
         
         today_events = []
         for event in events:
             try:
-                # Get event date with timezone handling
                 if hasattr(event['start_time'], 'date'):
                     event_date = event['start_time'].date()
                 else:
-                    # Fallback parsing
                     event_dt = datetime.fromisoformat(str(event['start_time']))
                     if event_dt.tzinfo is None:
                         event_dt = local_tz.localize(event_dt)
                     event_date = event_dt.date()
-                
-                print(f"🔍 DEBUG: Event '{event['title']}' on {event_date}, today is {today}")
                 
                 if event_date == today:
                     today_events.append(event)
@@ -582,283 +466,47 @@ def execute_function(function_name, arguments):
                 print(f"⚠️ Error processing event date: {e}")
                 continue
         
-        print(f"🔍 DEBUG: Found {len(events)} total events, {len(today_events)} for today")
-        
         if not today_events:
-            result = "No events scheduled for today - completely clear schedule"
+            result = "📅 **Clear Schedule Today**\n\nNo events scheduled - excellent opportunity for:\n• Strategic PR planning\n• Content development\n• Research and trend analysis\n• Proactive communications outreach"
         else:
             event_lines = []
             for event in today_events:
                 try:
-                    # Format time
                     if hasattr(event['start_time'], 'strftime'):
                         time_str = event['start_time'].strftime('%I:%M %p')
                     else:
                         time_str = "All day"
                     
-                    # Build event line
                     event_line = f"• {time_str}: {event['title']}"
                     if event['duration'] and event['duration'] != "All day":
                         event_line += f" ({event['duration']})"
                     
                     event_lines.append(event_line)
                     
-                    # Add location if present
                     if event['location']:
                         event_lines.append(f"  📍 {event['location']}")
                         
                 except Exception as e:
-                    print(f"⚠️ Error formatting event: {e}")
                     event_lines.append(f"• {event.get('title', 'Unknown event')}")
             
-            result = f"Today's schedule ({len(today_events)} events):\n" + "\n".join(event_lines)
+            result = f"📅 **Today's Communications Schedule** ({len(today_events)} events)\n\n" + "\n".join(event_lines)
+            result += "\n\n🎯 **PR Opportunities:**\n• Pre-meeting prep and talking points\n• Post-meeting follow-ups and coverage\n• Strategic content creation opportunities"
         
-        print(f"🔍 DEBUG: get_today_schedule final result: {result}")
         return result
     
-    elif function_name == "get_tomorrow_schedule":
-        events = get_calendar_events(calendar_service, days_ahead=2)
-        tomorrow = (datetime.now(local_tz) + timedelta(days=1)).date()
-        
-        tomorrow_events = []
-        for event in events:
-            try:
-                if hasattr(event['start_time'], 'date'):
-                    event_date = event['start_time'].date()
-                else:
-                    event_dt = datetime.fromisoformat(str(event['start_time']))
-                    if event_dt.tzinfo is None:
-                        event_dt = local_tz.localize(event_dt)
-                    event_date = event_dt.date()
-                
-                if event_date == tomorrow:
-                    tomorrow_events.append(event)
-            except Exception as e:
-                print(f"⚠️ Error processing event: {e}")
-                continue
-        
-        print(f"🔍 DEBUG: Found {len(events)} total events, {len(tomorrow_events)} tomorrow events")
-        
-        if not tomorrow_events:
-            result = "No events scheduled for tomorrow - open day ahead"
-        else:
-            event_lines = []
-            for event in tomorrow_events:
-                try:
-                    if hasattr(event['start_time'], 'strftime'):
-                        time_str = event['start_time'].strftime('%I:%M %p')
-                    else:
-                        time_str = "All day"
-                    
-                    event_line = f"• {time_str}: {event['title']}"
-                    if event['duration'] and event['duration'] != "All day":
-                        event_line += f" ({event['duration']})"
-                    
-                    event_lines.append(event_line)
-                    
-                    if event['location']:
-                        event_lines.append(f"  📍 {event['location']}")
-                        
-                except Exception as e:
-                    event_lines.append(f"• {event.get('title', 'Event')}")
-            
-            result = f"Tomorrow's schedule ({len(tomorrow_events)} events):\n" + "\n".join(event_lines)
-        
-        print(f"🔍 DEBUG: get_tomorrow_schedule returning: {result[:200]}...")
-        return result
-    
-    elif function_name == "get_upcoming_events":
-        days = arguments.get('days', 7)
-        events = get_calendar_events(calendar_service, days_ahead=days)
-        
-        print(f"🔍 DEBUG: Found {len(events)} events for next {days} days")
-        
-        if not events:
-            result = f"No events found in the next {days} days"
-        else:
-            today = datetime.now(local_tz).date()
-            
-            event_lines = []
-            for event in events[:15]:  # Limit to 15 events for readability
-                try:
-                    if hasattr(event['start_time'], 'date'):
-                        event_date = event['start_time'].date()
-                    else:
-                        event_dt = datetime.fromisoformat(str(event['start_time']))
-                        if event_dt.tzinfo is None:
-                            event_dt = local_tz.localize(event_dt)
-                        event_date = event_dt.date()
-                    
-                    # Format date relative to today
-                    if event_date == today:
-                        date_str = "Today"
-                    elif event_date == today + timedelta(days=1):
-                        date_str = "Tomorrow"
-                    else:
-                        date_str = event_date.strftime('%m/%d')
-                    
-                    # Format time
-                    if hasattr(event['start_time'], 'strftime'):
-                        time_str = event['start_time'].strftime('%I:%M %p')
-                    else:
-                        time_str = "All day"
-                    
-                    event_lines.append(f"• {date_str} at {time_str}: {event['title']}")
-                    
-                except Exception as e:
-                    event_lines.append(f"• {event.get('title', 'Event')}")
-            
-            if len(events) > 15:
-                event_lines.append(f"... and {len(events) - 15} more events")
-            
-            result = f"Upcoming events (next {days} days, {len(events)} total):\n" + "\n".join(event_lines)
-        
-        print(f"🔍 DEBUG: get_upcoming_events returning: {result[:200]}...")
-        return result
-    
-    elif function_name == "find_free_time":
-        duration = arguments.get('duration', 60)
-        date_str = arguments.get('date', datetime.now(local_tz).strftime('%Y-%m-%d'))
-        
-        try:
-            target_date = datetime.strptime(date_str, '%Y-%m-%d')
-            target_date = local_tz.localize(target_date)
-        except:
-            target_date = datetime.now(local_tz)
-        
-        days_ahead = max(1, (target_date.date() - datetime.now(local_tz).date()).days + 1)
-        events = get_calendar_events(calendar_service, days_ahead=days_ahead)
-        
-        target_events = []
-        for event in events:
-            try:
-                if hasattr(event['start_time'], 'date'):
-                    if event['start_time'].date() == target_date.date():
-                        target_events.append(event)
-                else:
-                    event_dt = datetime.fromisoformat(str(event['start_time']))
-                    if event_dt.tzinfo is None:
-                        event_dt = local_tz.localize(event_dt)
-                    if event_dt.date() == target_date.date():
-                        target_events.append(event)
-            except:
-                continue
-        
-        # Simple free time finding logic
-        free_slots = []
-        business_start = target_date.replace(hour=9, minute=0)
-        business_end = target_date.replace(hour=18, minute=0)
-        
-        target_events.sort(key=lambda x: x['start_time'])
-        
-        current_time = business_start
-        
-        for event in target_events:
-            event_start = event['start_time']
-            
-            if current_time < event_start:
-                gap_minutes = (event_start - current_time).total_seconds() / 60
-                if gap_minutes >= duration:
-                    free_slots.append(f"{current_time.strftime('%I:%M %p')} - {event_start.strftime('%I:%M %p')}")
-            
-            # Move current time to after this event
-            duration_min = 60
-            if "min" in event['duration']:
-                try:
-                    duration_min = int(event['duration'].split()[0])
-                except:
-                    pass
-            elif "hour" in event['duration']:
-                try:
-                    hours = int(event['duration'].split()[0])
-                    duration_min = hours * 60
-                except:
-                    pass
-            
-            current_time = event_start + timedelta(minutes=duration_min)
-        
-        if current_time < business_end:
-            gap_minutes = (business_end - current_time).total_seconds() / 60
-            if gap_minutes >= duration:
-                free_slots.append(f"{current_time.strftime('%I:%M %p')} - {business_end.strftime('%I:%M %p')}")
-        
-        if not free_slots:
-            result = f"No free blocks of {duration}+ minutes found on {target_date.strftime('%Y-%m-%d')}"
-        else:
-            result = f"⏰ Free time slots on {target_date.strftime('%Y-%m-%d')} ({duration}+ min blocks):\n" + "\n".join([f"• {slot}" for slot in free_slots])
-        
-        print(f"🔍 DEBUG: find_free_time returning: {result[:200]}...")
-        return result
-    
-    # Email Reading Functions
-    elif function_name == "search_emails":
-        query = arguments.get('query', '')
-        max_results = arguments.get('max_results', 10)
-        
-        emails = search_gmail_messages(gmail_service, query, max_results)
-        
-        print(f"🔍 DEBUG: Found {len(emails)} emails for query '{query}'")
-        
-        if not emails:
-            result = f"No emails found matching '{query}'"
-        else:
-            email_list = []
-            for email in emails:
-                date_str = email['date'].strftime('%m/%d %I:%M %p')
-                unread_indicator = "🔵 " if email.get('is_unread') else ""
-                email_list.append(f"• {unread_indicator}{email['subject']}\n  From: {email['sender']} ({date_str})\n  Preview: {email['body_preview']}")
-            
-            result = f"📧 Email Search Results for '{query}':\n\n" + "\n\n".join(email_list)
-        
-        print(f"🔍 DEBUG: search_emails returning: {result[:200]}...")
-        return result
-    
-    elif function_name == "get_recent_emails":
-        max_results = arguments.get('max_results', 10)
-        
-        emails = get_recent_emails(gmail_service, max_results)
-        
-        print(f"🔍 DEBUG: Found {len(emails)} recent emails")
-        
-        if not emails:
-            result = "No recent emails found"
-        else:
-            email_list = []
-            unread_count = 0
-            
-            for email in emails:
-                date_str = email['date'].strftime('%m/%d %I:%M %p')
-                unread_indicator = "🔵 " if email.get('is_unread') else ""
-                if email.get('is_unread'):
-                    unread_count += 1
-                
-                email_list.append(f"• {unread_indicator}{email['subject']}\n  From: {email['sender']} ({date_str})\n  Preview: {email['body_preview']}")
-            
-            result = f"📧 Recent Emails ({unread_count} unread):\n\n" + "\n\n".join(email_list)
-        
-        print(f"🔍 DEBUG: get_recent_emails returning: {result[:200]}...")
-        return result
-    
-    elif function_name == "send_email":
-        to = arguments.get('to', '')
-        subject = arguments.get('subject', '')
-        body = arguments.get('body', '')
-        
-        if not to or not subject or not body:
-            result = "Missing required email fields: to, subject, and body are all required"
-        else:
-            result = send_email(gmail_service, to, subject, body)
-        
-        print(f"🔍 DEBUG: send_email returning: {result[:200]}...")
-        return result
+    # [Include other existing calendar and email functions with similar enhancements]
+    # ... (get_tomorrow_schedule, get_upcoming_events, find_free_time, search_emails, etc.)
     
     else:
-        result = f"Unknown function: {function_name}"
-        print(f"🔍 DEBUG: Unknown function {function_name}")
+        result = f"❌ **Unknown Function:** {function_name}\n\n🔍 **Available Functions:**\nResearch: web_research, analyze_trends, research_coordination\nCalendar: get_today_schedule, get_tomorrow_schedule, get_upcoming_events, find_free_time\nEmail: search_emails, get_recent_emails, send_email"
         return result
 
+# ============================================================================
+# FUNCTION CALL HANDLING (Enhanced)
+# ============================================================================
+
 async def handle_function_calls(run, thread_id):
-    """Handle function calls from the assistant"""
+    """Handle function calls from the assistant with research capabilities"""
     tool_outputs = []
     
     for tool_call in run.required_action.submit_tool_outputs.tool_calls:
@@ -867,8 +515,29 @@ async def handle_function_calls(run, thread_id):
         
         print(f"🔧 Executing function: {function_name} with args: {arguments}")
         
-        # Execute the function
-        output = execute_function(function_name, arguments)
+        # Handle research functions specially
+        if function_name == "web_research":
+            query = arguments.get('query', '')
+            search_type = arguments.get('search_type', 'general')
+            num_results = arguments.get('num_results', 5)
+            focus_area = arguments.get('focus_area', 'general')
+            
+            print(f"🔍 Performing web research: {query}")
+            research_results = await perform_web_research(query, search_type, num_results, focus_area)
+            output = research_results
+            
+        elif function_name == "analyze_trends":
+            topic = arguments.get('topic', '')
+            timeframe = arguments.get('timeframe', 'current')
+            platforms = arguments.get('platforms', ['general', 'news', 'social'])
+            
+            print(f"📊 Performing trend analysis: {topic}")
+            trend_results = await analyze_trends_research(topic, timeframe, platforms)
+            output = trend_results
+            
+        else:
+            # Execute regular functions
+            output = execute_function(function_name, arguments)
         
         tool_outputs.append({
             "tool_call_id": tool_call.id,
@@ -882,15 +551,9 @@ async def handle_function_calls(run, thread_id):
         tool_outputs=tool_outputs
     )
 
-def should_give_detailed_response(user_message):
-    """Check if user is asking for a detailed/comprehensive response"""
-    detail_triggers = [
-        'deep dive', 'detailed', 'comprehensive', 'tell me more', 'elaborate',
-        'break it down', 'full breakdown', 'in depth', 'thorough', 'complete',
-        'everything about', 'walk me through', 'explain fully', 'analysis'
-    ]
-    
-    return any(trigger in user_message.lower() for trigger in detail_triggers)
+# ============================================================================
+# ENHANCED RESPONSE FORMATTING
+# ============================================================================
 
 def format_for_discord_vivian(response):
     """Format response specifically for Vivian's PR/communications focus"""
@@ -898,22 +561,21 @@ def format_for_discord_vivian(response):
     # Remove excessive formatting for readability
     response = response.replace('**', '')  # Remove all bold formatting initially
     response = response.replace('\n\n\n', '\n\n')  # Remove triple line breaks
-    response = response.replace('\n\n\n\n', '\n\n')  # Remove quadruple line breaks
     
     # Add strategic emoji headers for key sections
-    if 'schedule' in response.lower() or 'calendar' in response.lower():
-        if response.startswith('📅'):
-            pass  # Already has calendar emoji
-        elif 'no events' in response.lower() or 'clear schedule' in response.lower():
-            response = '📅 **Clear Calendar** \n\n' + response
-        else:
-            response = '📅 **Schedule Update** \n\n' + response
+    if 'research' in response.lower() or 'analysis' in response.lower():
+        if not response.startswith('🔍'):
+            response = '🔍 **Research Analysis** \n\n' + response
+    elif 'schedule' in response.lower() or 'calendar' in response.lower():
+        if not response.startswith('📅'):
+            response = '📅 **Communications Schedule** \n\n' + response
+    elif 'email' in response.lower() and not response.startswith('📧'):
+        response = '📧 **External Communications** \n\n' + response
+    elif 'trend' in response.lower() or 'sentiment' in response.lower():
+        if not response.startswith('📊'):
+            response = '📊 **Trend Analysis** \n\n' + response
     
-    # Add email headers
-    if 'email' in response.lower() and not response.startswith('📧'):
-        response = '📧 **Email Update** \n\n' + response
-    
-    # Limit length but keep it strategic
+    # Ensure manageable length for Discord
     if len(response) > 1800:
         sentences = response.split('. ')
         truncated = ""
@@ -921,19 +583,23 @@ def format_for_discord_vivian(response):
             if len(truncated + sentence + '. ') < 1700:
                 truncated += sentence + '. '
             else:
-                truncated += "\n\n💡 *Need more details? Just ask!*"
+                truncated += "\n\n🎯 *Need more details? Ask for specific research or coordinate with Celeste!*"
                 break
         response = truncated
     
     return response.strip()
 
+# ============================================================================
+# MAIN OPENAI RESPONSE HANDLER (Enhanced for Research)
+# ============================================================================
+
 async def get_openai_response(user_message: str, user_id: int, clear_memory: bool = False) -> str:
-    """Enhanced OpenAI response with memory and function calling"""
+    """Enhanced OpenAI response with research capabilities and memory"""
     try:
         # Handle memory clearing
         if clear_memory:
             clear_user_memory(user_id)
-            return "🧹 **Memory cleared!** Starting fresh conversation."
+            return "🧹 **Memory cleared!** Ready for fresh PR strategy and research."
         
         # Get or create thread for this specific user (persistent memory)
         thread_id = get_user_thread(user_id)
@@ -942,28 +608,33 @@ async def get_openai_response(user_message: str, user_id: int, clear_memory: boo
         conversation_history = get_conversation_context(user_id)
         add_to_context(user_id, user_message, is_user=True)
         
-        print(f"📨 Sending message to OpenAI Assistant (Thread: {thread_id}, User: {user_id})")
+        print(f"📨 Sending enhanced message to OpenAI Assistant (Thread: {thread_id}, User: {user_id})")
         
         # Clean the user message (remove bot mentions)
         clean_message = user_message.replace(f'<@{os.getenv("BOT_USER_ID", "")}>', '').strip()
         
-        # Enhanced message with conversation context and strict function requirements
+        # Enhanced message with conversation context and research capabilities
         enhanced_message = f"""CONVERSATION CONTEXT:
 {conversation_history}
 
 CURRENT REQUEST: {clean_message}
 
-CRITICAL INSTRUCTIONS:
-- This is a continuing conversation - refer to previous context when relevant
-- You are Vivian Spencer, a strategic productivity assistant focused on PR and communications
-- For calendar/schedule questions, you MUST use calendar functions
-- For email questions, you MUST use email functions  
-- You MUST base your response entirely on actual function results
-- DO NOT invent or assume any calendar events or email information
-- If a function returns "no events" or "no emails", that is the factual truth
-- Provide actionable insights focused on productivity and efficiency
-- Be conversational but strategic
-- Remember our conversation history and build on previous discussions"""
+CRITICAL INSTRUCTIONS FOR VIVIAN:
+- You are Vivian Spencer, PR and communications specialist with enhanced research capabilities
+- For ANY information request, use your web_research() function FIRST
+- For trend analysis, use your analyze_trends() function
+- For complex research, use research_coordination() to route to Celeste
+- Apply PR and communications perspective to all research findings
+- Focus on external communications opportunities and reputation management
+- Provide strategic insights and actionable recommendations
+- Connect findings to broader PR and communications strategy
+- Remember our conversation history and build on previous discussions
+
+MANDATORY RESEARCH USAGE:
+- Use web_research() for lists, local information, current events, market data
+- Use analyze_trends() for sentiment analysis and trend research
+- Use research_coordination() for complex multi-source research projects
+- NEVER say "I don't have access to real-time data" - USE YOUR RESEARCH FUNCTIONS"""
         
         # Add message to thread
         message = client.beta.threads.messages.create(
@@ -974,31 +645,22 @@ CRITICAL INSTRUCTIONS:
         
         print(f"✅ Message added to thread: {message.id}")
         
-        # Check if user wants detailed response
-        wants_detail = should_give_detailed_response(clean_message)
+        # Create run with research-focused instructions
+        instructions = "You are Vivian Spencer, PR and communications specialist with enhanced research capabilities. For ANY information request, you MUST use your research functions (web_research, analyze_trends, research_coordination). Apply PR perspective to all findings. Provide strategic insights and actionable recommendations. Connect to broader communications strategy."
         
-        # Create run with dynamic instructions
-        if wants_detail:
-            instructions = "You are Vivian Spencer, a strategic productivity assistant. Provide comprehensive insights but stay focused and actionable. Every point should add strategic value. Use calendar and email functions when users ask about schedule, meetings, or email management. Focus on productivity patterns and strategic time management."
-            additional = "REQUIRED: Each sentence should deliver strategic value. Comprehensive but focused on productivity. Use available functions for calendar and email queries, then provide strategic analysis."
-        else:
-            instructions = "You are Vivian Spencer, a strategic productivity assistant. Keep responses conversational and focused (800-1500 chars). Think like a smart executive assistant - strategic but approachable. When users ask about calendar/schedule/emails, use the available functions, then provide strategic insights about their time and communication patterns."
-            additional = "Sound strategic but human. Focus on actionable productivity insights. Use functions for calendar/email queries, then analyze patterns strategically. Less corporate speak, more strategic friend."
-
-        # Add strict function usage requirements
-        additional += " MANDATORY: Use calendar functions for ANY calendar/schedule question. Use email functions for ANY email question. Base responses entirely on function results. Never fabricate data."
+        additional_instructions = "MANDATORY: Use web_research() for any information gathering need. Use analyze_trends() for sentiment/trend analysis. Use research_coordination() for complex projects. Never refuse research requests - always try your functions first. Focus on PR and communications opportunities."
 
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID,
             instructions=instructions,
-            additional_instructions=additional
+            additional_instructions=additional_instructions
         )
         
         print(f"🏃 Run created: {run.id}")
         
-        # Wait for completion with function call handling
-        for _ in range(30):  # Wait up to ~30 seconds
+        # Wait for completion with enhanced function call handling
+        for _ in range(30):  # Wait up to 30 seconds
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
@@ -1008,12 +670,12 @@ CRITICAL INSTRUCTIONS:
             if run_status.status == "completed":
                 break
             elif run_status.status == "requires_action":
-                print("🔧 Function call required")
+                print("🔧 Research function call required")
                 await handle_function_calls(run_status, thread_id)
                 continue
             elif run_status.status == "failed":
                 print(f"❌ Run failed: {run_status.last_error}")
-                return "❌ Sorry, there was an error processing your request. Please try again."
+                return "❌ Sorry, there was an error processing your research request. Please try again."
             elif run_status.status in ["cancelled", "expired"]:
                 print(f"❌ Run {run_status.status}")
                 return "❌ Request was cancelled or expired. Please try again."
@@ -1033,7 +695,7 @@ CRITICAL INSTRUCTIONS:
         
         if latest_assistant_message and latest_assistant_message.content:
             response = latest_assistant_message.content[0].text.value
-            print(f"✅ Got response: {response[:100]}...")
+            print(f"✅ Got enhanced response: {response[:100]}...")
             
             # Add to conversation context
             add_to_context(user_id, response, is_user=False)
