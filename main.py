@@ -54,11 +54,11 @@ ALLOWED_CHANNELS = ['social-overview', 'news-feed', 'external-communications', '
 print("🚀 Starting Enhanced Vivian - PR & Communications with Research...")
 
 # ============================================================================
-# ENHANCED WEB SEARCH FUNCTIONS
+# FIXED WEB SEARCH FUNCTIONS
 # ============================================================================
 
 async def search_web(query, search_type="general", num_results=5):
-    """Enhanced web search using Brave Search API with better research capabilities"""
+    """FIXED web search using Brave Search API"""
     try:
         if not BRAVE_API_KEY:
             return "🔍 **Research capabilities unavailable** - BRAVE_API_KEY not configured.\n\n📨 **Coordination Option:** I can route this research request to Celeste for manual research and synthesis."
@@ -69,14 +69,14 @@ async def search_web(query, search_type="general", num_results=5):
             'X-Subscription-Token': BRAVE_API_KEY
         }
         
+        # FIXED: Removed problematic boolean parameters
         params = {
             'q': query,
             'count': num_results,
             'offset': 0,
             'mkt': 'en-US',
-            'safesearch': 'moderate',
-            'textDecorations': False,
-            'textFormat': 'Raw'
+            'safesearch': 'moderate'
+            # Removed textDecorations and textFormat - they were causing the error
         }
         
         # Enhanced search type handling
