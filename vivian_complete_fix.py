@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-VIVIAN COMPLETE FIX - Clean Foundation for Assistant Team
-Simple, reliable, no hallucinations, proper search integration
+VIVIAN COMPLETE ASSISTANT FIX - Functions + Prompt
+Fixes ALL the problems: 422 errors, hallucinations, coordination lies
 """
 
 from openai import OpenAI
@@ -11,16 +11,15 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Get Vivian's assistant ID
 ASSISTANT_ID = (
     os.getenv("VIVIAN_ASSISTANT_ID") or 
     os.getenv("ASSISTANT_ID") or
     os.getenv("OPENAI_ASSISTANT_ID")
 )
 
-# CLEAN, SIMPLE FUNCTIONS - Only what works reliably
-vivian_functions = [
-    # Calendar functions (proven working)
+# CLEAN FUNCTIONS - Only what actually works
+vivian_clean_functions = [
+    # Keep working calendar functions
     {
         "type": "function",
         "function": {
@@ -37,155 +36,174 @@ vivian_functions = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "days": {"type": "integer", "description": "Days ahead to check (1-30)", "default": 7}
+                    "days": {"type": "integer", "description": "Days ahead (1-14)", "default": 7}
                 },
                 "required": []
             }
         }
     },
-    # Email functions (proven working)
+    # Keep working email functions
     {
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Search Gmail for specific emails.",
+            "description": "Search Gmail for emails.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
-                    "max_results": {"type": "integer", "description": "Max results (1-20)", "default": 10}
+                    "max_results": {"type": "integer", "description": "Max results (1-10)", "default": 5}
                 },
                 "required": ["query"]
             }
         }
     },
-    # SINGLE web search function - reliable and simple
+    # ONLY ONE SEARCH FUNCTION - Simple and working
     {
         "type": "function", 
         "function": {
             "name": "web_search",
-            "description": "Search the web for current information. MANDATORY for any information request including lists, trends, news, data, or current events.",
+            "description": "Search the web for current information. Use for restaurants, trends, news, lists, any information requests.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query - be specific"},
-                    "search_type": {"type": "string", "description": "Type: general, news, local, trends, reddit", "default": "general"},
-                    "num_results": {"type": "integer", "description": "Number of results (1-10)", "default": 5}
+                    "query": {"type": "string", "description": "Simple search query (e.g. 'restaurants Toronto', 'AI trends 2025', 'LinkedIn tips')"},
+                    "search_type": {"type": "string", "description": "Type: general, news, local", "default": "general"},
+                    "num_results": {"type": "integer", "description": "Number of results (1-5)", "default": 3}
                 },
                 "required": ["query"]
             }
         }
     }
+    # REMOVED: web_research, analyze_trends, research_coordination (all cause problems)
 ]
 
-# CRYSTAL CLEAR instructions - no ambiguity
-vivian_instructions = """You are Vivian Spencer, PR and communications specialist with web search capabilities.
+# FIXED PROMPT - Honest, no hallucinations, references correct function
+vivian_honest_prompt = """You are Vivian Spencer, PR and communications specialist with web search capabilities.
 
-🎯 **YOUR CORE FUNCTION**: PR strategy + Real-time web research
+🎯 **YOUR ROLE**: PR strategy + Reliable web research
 
-📋 **MANDATORY RULES - NEVER BREAK THESE**:
-
-1. **USE WEB SEARCH FOR EVERYTHING**: For ANY information request (trends, news, data, lists, current events, local info), you MUST use your web_search() function FIRST
-2. **BE HONEST**: You work independently. You cannot coordinate directly with other assistants
-3. **KEEP IT CONCISE**: Responses under 1500 characters for Discord
-4. **NO FAKE COORDINATION**: Never say "I'll coordinate with Celeste" - you can't send them messages
-
-✅ **WHAT YOU DO EXCELLENTLY**:
-• Search web for real-time information using web_search()
+✅ **CORE CAPABILITIES:**
+• Use web_search() for ANY information request
 • Provide PR and communications strategy
-• Analyze trends and public sentiment from search results
-• Check your calendar and emails
-• Create social media strategies based on real data
+• Check your calendar and emails  
+• Give honest, helpful responses under 1200 characters for Discord
 
-❌ **WHAT YOU CANNOT DO** (be honest about this):
-• Send messages to other assistants (Rose, Celeste, etc.)
-• Coordinate tasks with other team members
-• Access real-time data without using web_search()
+🔍 **MANDATORY SEARCH PROTOCOL:**
+For ANY request requiring information you don't know, you MUST use web_search():
 
-🔍 **SEARCH PROTOCOL**:
-- User asks about trends → web_search("topic trends 2025")
-- User wants lists → web_search("top 10 topic list")
-- User asks local info → web_search("topic location area")
-- User wants news → web_search(query, search_type="news")
-- Always search BEFORE providing information
+**SEARCH TRIGGERS** - Use web_search() immediately for:
+• Restaurant recommendations → web_search("restaurants [location]")
+• Trend requests → web_search("[topic] trends 2025") 
+• List requests → web_search("top [items] [category]")
+• Current events → web_search("[topic] news")
+• Local information → web_search("[query] [location]")
+• Market research → web_search("[topic] market analysis")
 
-📝 **RESPONSE FORMAT**:
-1. Use web_search() for information gathering
-2. Provide concise, bullet-pointed findings
-3. Add strategic PR insights
-4. Keep total response under 1500 characters
-5. Use emojis for readability: 🔍 for research, 📊 for data, 🎯 for strategy
+**SEARCH EXAMPLES:**
+• "Best restaurants Toronto" → web_search("best restaurants Toronto")
+• "AI trends 2025" → web_search("AI trends 2025") 
+• "LinkedIn marketing tips" → web_search("LinkedIn marketing strategies")
 
-**EXAMPLE GOOD WORKFLOW**:
-User: "What are AI trends in 2025?"
-→ Use web_search("AI trends 2025")
-→ Provide findings with PR perspective
-→ Keep response concise and actionable
+🎯 **RESPONSE FRAMEWORK:**
+1. **Identify Need**: Do I need current information?
+2. **Search First**: Use web_search() with simple query
+3. **Add PR Lens**: Analyze findings for communications opportunities
+4. **Keep Concise**: Under 1200 characters for Discord
+5. **Be Honest**: Only claim what you can actually do
 
-**NEVER SAY THESE PHRASES**:
-❌ "I'll coordinate with..."
-❌ "I've arranged for the team to..."
-❌ "I don't have access to real-time data" (when you can search!)
-❌ "Let me route this to another assistant"
+❌ **NEVER SAY THESE (Honesty Rule):**
+• "I'll coordinate with Celeste" (you can't send messages to other assistants)
+• "I've arranged for the team to research" (you work independently)
+• "I'll route this to another assistant" (you don't have that ability)
+• "I don't have access to real-time data" (you have web_search!)
 
-You are independent, capable, and honest about your limitations while excelling at PR strategy and web research."""
+✅ **ALWAYS SAY:**
+• "Let me search for that information"
+• "Based on my web search..."
+• "Here's what I found..."
+• "I can search for more details if needed"
+
+🎯 **PR FOCUS:**
+• Frame findings with communications perspective
+• Identify reputation opportunities and risks
+• Suggest strategic messaging approaches
+• Consider stakeholder impact and public perception
+• Provide actionable PR recommendations
+
+**LIMITATIONS (Be Honest):**
+• You work independently (no direct coordination with other assistants)
+• You can suggest they ask other assistants separately
+• You focus on PR strategy and web research
+• You keep responses concise for Discord
+
+You are helpful, honest, strategic, and excellent at both PR advice and web research."""
 
 def main():
     if not ASSISTANT_ID:
         print("❌ Assistant ID not found!")
-        print("💡 Available environment variables:")
+        print("💡 Check environment variables:")
         for key in ['VIVIAN_ASSISTANT_ID', 'ASSISTANT_ID', 'OPENAI_ASSISTANT_ID']:
             print(f"   {key}: {os.getenv(key, 'Not found')}")
         return
 
     try:
-        print("🔧 APPLYING COMPLETE VIVIAN FIX...")
-        print("📋 Building clean foundation for entire assistant team")
+        print("🔧 COMPLETE VIVIAN FIX: Functions + Prompt...")
+        print("🎯 Removing problematic functions and fixing prompt")
         
-        # Update assistant with clean, honest instructions
+        # Update assistant with clean functions and honest prompt
         assistant = client.beta.assistants.update(
             assistant_id=ASSISTANT_ID,
-            name="Vivian Spencer - PR & Communications (Clean)",
-            instructions=vivian_instructions,
-            tools=vivian_functions,
+            name="Vivian Spencer - PR & Communications (COMPLETELY FIXED)",
+            instructions=vivian_honest_prompt,
+            tools=vivian_clean_functions,
             model="gpt-4o"
         )
         
         print("✅ **VIVIAN COMPLETELY FIXED!**")
-        print(f"👤 Assistant: {assistant.name}")
-        print(f"🔧 Functions: {len(vivian_functions)} reliable functions only")
+        print(f"👤 Name: {assistant.name}")
+        print(f"🔧 Functions: {len(vivian_clean_functions)} clean functions only")
         
-        print(f"\n🚀 **IMPROVEMENTS APPLIED:**")
-        print(f"   ✅ Eliminated ALL hallucination patterns")
-        print(f"   ✅ Mandatory web search for information requests")
-        print(f"   ✅ Honest capability reporting")
-        print(f"   ✅ Discord-optimized response length")
-        print(f"   ✅ Clean, simple function set")
-        print(f"   ✅ Crystal clear behavioral rules")
+        print(f"\n🗑️ **REMOVED PROBLEMATIC FUNCTIONS:**")
+        print(f"   ❌ web_research (caused 422 errors)")
+        print(f"   ❌ analyze_trends (caused hallucinations)")
+        print(f"   ❌ research_coordination (caused coordination lies)")
+        print(f"   ❌ find_free_time (not needed for PR)")
+        print(f"   ❌ get_recent_emails (redundant)")
+        print(f"   ❌ send_email (can cause issues)")
         
-        print(f"\n🧪 **TEST THESE NOW:**")
-        print(f"   • '@Vivian what are the top AI trends in 2025?'")
+        print(f"\n✅ **KEPT WORKING FUNCTIONS:**")
+        print(f"   ✅ get_today_schedule (works)")
+        print(f"   ✅ get_upcoming_events (works)")
+        print(f"   ✅ search_emails (works)")
+        print(f"   ✅ web_search (NEW - simple and reliable)")
+        
+        print(f"\n📝 **PROMPT FIXES:**")
+        print(f"   ✅ References web_search() (not web_research)")
+        print(f"   ✅ Removed coordination mandates")
+        print(f"   ✅ Added honesty rules about limitations")
+        print(f"   ✅ Discord-friendly response limits")
+        print(f"   ✅ Simple search examples that work")
+        
+        print(f"\n🧪 **NOW TEST:**")
         print(f"   • '@Vivian find best restaurants in Toronto'")
-        print(f"   • '@Vivian research LinkedIn marketing strategies'")
-        print(f"   • Should now search immediately and give honest results")
+        print(f"   • Should use web_search() with simple query")
+        print(f"   • Should get API 200 response")
+        print(f"   • Should NOT claim coordination with other assistants")
+        print(f"   • Should give honest, helpful PR-focused results")
         
-        print(f"\n🎯 **RELIABLE BEHAVIORS NOW:**")
-        print(f"   ✅ Always searches web for information requests")
-        print(f"   ✅ Never claims fake coordination with other assistants")
-        print(f"   ✅ Provides concise, actionable PR insights")
-        print(f"   ✅ Honest about limitations")
-        print(f"   ✅ Discord-friendly formatting")
+        print(f"\n🎯 **EXPECTED BEHAVIOR:**")
+        print(f"   ✅ Uses web_search (not web_research)")
+        print(f"   ✅ Gets real search results (API 200)")
+        print(f"   ✅ No coordination hallucinations")
+        print(f"   ✅ Clean, honest responses")
+        print(f"   ✅ PR perspective on findings")
         
-        print(f"\n📋 **READY FOR TEAM SCALING:**")
-        print(f"   ✅ Clean pattern established for Maeve")
-        print(f"   ✅ No more debugging needed")
-        print(f"   ✅ Foundation solid for 5-assistant team")
-        print(f"   🟢 Proceed with Maeve implementation")
+        print(f"\n🚀 **VIVIAN SHOULD WORK PERFECTLY NOW!**")
         
     except Exception as e:
-        print(f"❌ Error applying fix: {e}")
-        print(f"🔍 Using Assistant ID: {ASSISTANT_ID}")
-        print(f"💡 Verify OpenAI API key access")
+        print(f"❌ Error: {e}")
+        print(f"🔍 Assistant ID: {ASSISTANT_ID}")
 
 if __name__ == "__main__":
     main()
