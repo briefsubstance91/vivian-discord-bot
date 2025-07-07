@@ -1,11 +1,117 @@
+# Environment variables (NEVER commit these!)
 .env
+.env.local
+.env.production
+.env.development
+
+# Python
 __pycache__/
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
 .venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
-.env
-.venv/
-.DS_Store
-vivian-spencer-74830a0125ab.json
-.credentials
-vivian-spencer-2-3658a868e46e.json
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Google credentials (NEVER commit these!)
+*.json
+.credentials/
+service-account-*.json
+google-credentials.json
+
+# OpenAI and API keys (NEVER commit these!)
+openai-key.txt
+api-keys.txt
+.secrets
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Railway deployment files (optional)
+.railway/
+
+# Discord bot specific
+bot-logs/
+user-data/
+temp/
+
+# Vivian specific files
+pr-reports/
+social-media-data/
+communications-temp/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Test files
+test-*.py
+*-test.py
+test_*.py
+
+# Documentation builds
+docs/_build/
+.readthedocs.yml
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
