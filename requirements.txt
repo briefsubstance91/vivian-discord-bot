@@ -1,5 +1,5 @@
-# Universal Requirements for All Assistant Discord Bots
-# Compatible with Vivian, Maeve, Celeste, Rose, and Flora
+# Vivian Spencer Discord Bot Requirements
+# PR & Communications with Gmail & Calendar Integration
 
 # Discord bot framework
 discord.py>=2.3.0
@@ -13,12 +13,12 @@ aiohttp>=3.8.0
 # Environment variable management
 python-dotenv>=1.0.0
 
-# Google APIs for Gmail/Calendar integration (Vivian, Rose)
+# Google APIs for Gmail/Calendar integration
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.1.0
 google-auth-oauthlib>=1.0.0
 
-# Date/time handling (Vivian, Rose, Celeste)
+# Date/time handling
 pytz>=2023.3
 
 # Data handling
