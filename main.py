@@ -363,96 +363,59 @@ async def export_for_rose_command(ctx):
 
 @bot.command(name='status')
 async def status_command(ctx):
-    """Executive system status with comprehensive diagnostics"""
+    """Show Vivian's enhanced status"""
     try:
-        embed = discord.Embed(
-            title="👑 Rose Ashcombe - Executive Assistant (Complete Enhanced)",
-            description="Executive Calendar & Task Management with Google Integration",
-            color=0xd4af37  # Gold color for executive
-        )
+        status_text = f"""📱 **{ASSISTANT_NAME} - {ASSISTANT_ROLE}**
+
+**🔗 Core Systems:**
+• OpenAI Assistant: {'✅ Connected' if ASSISTANT_ID else '❌ Not configured'}
+• BG Work Calendar: {'✅ Connected' if work_calendar_accessible else '❌ Not configured'}
+• Gmail Access: {'✅ Connected' if gmail_service else '❌ Not configured'}
+• Web Search: {'✅ Available' if BRAVE_API_KEY else '❌ Not configured'}
+
+**📅 Work Calendar Features:**
+• Today's work schedule viewing
+• Work briefings for PR planning
+• Meeting-aware communications timing
+• Rose integration for executive briefings
+
+**📊 Active Status:**
+• Conversations: {len(user_conversations)}
+• Active Runs: {len(active_runs)}"""
         
-        # Core Systems Section
-        core_systems = []
-        core_systems.append(f"• OpenAI Assistant: {'✅ Connected' if ASSISTANT_ID else '❌ Not configured'}")
-        core_systems.append(f"• Discord: ✅ Connected as {bot.user.name if bot.user else 'Unknown'}")
-        
-        if service_account_email:
-            core_systems.append(f"• Service Account: ✅ {service_account_email}")
-        else:
-            core_systems.append("• Service Account: ❌ Not configured")
-            
-        embed.add_field(
-            name="🤖 Core Systems:",
-            value="
-".join(core_systems),
-            inline=False
-        )
-        
-        # Calendar Integration
-        calendar_status = "❌ No calendars accessible"
-        if accessible_calendars:
-            calendar_names = [name for name, _, _ in accessible_calendars]
-            calendar_status = f"✅ {len(accessible_calendars)} calendars: {', '.join(calendar_names)}"
-        
-        embed.add_field(
-            name="📅 Calendar Integration:",
-            value=f"{calendar_status}
-🇨🇦 Timezone: Toronto (America/Toronto)",
-            inline=False
-        )
-        
-        # Executive Features
-        exec_features = [
-            "• Complete calendar management & scheduling",
-            "• Executive briefings & strategic planning", 
-            "• Task coordination across calendars",
-            "• Meeting preparation & follow-up",
-            "• Free time optimization",
-            "• Strategic research & productivity insights"
-        ]
-        embed.add_field(
-            name="💼 Executive Features:",
-            value="
-".join(exec_features),
-            inline=False
-        )
-        
-        # Specialties
-        specialties = [
-            "👑 Executive Planning",
-            "📊 Strategic Analysis", 
-            "📅 Calendar Mastery",
-            "🎯 Productivity Optimization",
-            "💼 Meeting Management",
-            "📋 Task Coordination"
-        ]
-        embed.add_field(
-            name="🎯 Specialties:",
-            value=" • ".join(specialties),
-            inline=False
-        )
-        
-        # Performance Metrics
-        embed.add_field(
-            name="⚡ Performance:",
-            value=f"👥 Active conversations: {len(user_conversations)}
-🏢 Allowed channels: {', '.join(ALLOWED_CHANNELS)}
-📊 Processing: {len(processing_messages)} messages",
-            inline=False
-        )
-        
-        # Research Status
-        research_status = "✅ Enabled" if BRAVE_API_KEY else "❌ Disabled"
-        embed.add_field(
-            name="🔍 Planning Research:",
-            value=f"Brave Search API: {research_status}",
-            inline=True
-        )
-        
-        await ctx.send(embed=embed)
-        
+        await ctx.send(status_text)
     except Exception as e:
         print(f"❌ Status command error: {e}")
-        # Fallback to simple message
-        await ctx.send("👑 Rose Ashcombe - Executive Assistant ready for strategic planning!")
 
+@bot.event
+async def on_ready():
+    """Bot startup with comprehensive initialization"""
+    try:
+        print(f"✅ {ASSISTANT_NAME} has awakened!")
+        print(f"📱 Connected as {bot.user.name} (ID: {bot.user.id})")
+        print(f"📋 Watching channels: {', '.join(ALLOWED_CHANNELS)}")
+        print(f"🤖 Assistant ID: {ASSISTANT_ID}")
+        print(f"🔍 PR Search: {'✅' if BRAVE_API_KEY else '❌'}")
+        print(f"📧 Gmail Integration: {'✅' if gmail_service else '❌'}")
+        print(f"📅 Work Calendar: {'✅' if work_calendar_accessible else '❌'}")
+        if work_calendar_accessible:
+            print(f"📅 BG Work Calendar ID: {BG_WORK_CALENDAR_ID}")
+        
+        await bot.change_presence(
+            status=discord.Status.online,
+            activity=discord.Activity(
+                type=discord.ActivityType.watching,
+                name="📅 Work Calendar & PR Strategy"
+            )
+        )
+        
+    except Exception as e:
+        print(f"❌ Error in on_ready: {e}")
+
+if __name__ == "__main__":
+    print("🚀 Starting Vivian Spencer with enhanced work calendar integration...")
+    print("📅 Remember to set BG_WORK_CALENDAR_ID in your environment variables!")
+    try:
+        bot.run(DISCORD_TOKEN)
+    except Exception as e:
+        print(f"❌ Bot failed to start: {e}")
