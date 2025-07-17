@@ -1,6 +1,125 @@
 #!/usr/bin/env python3
 """
-VIVIAN SPENCER - DISCORD BOT (CRASH FIX)
+VIVIAN SPENCER CALENDAR INTEGRATION UPDATE SCRIPT
+Phases 1-4: Work Calendar Focus + Enhanced Functions + OpenAI Integration + Rose Communication
+
+This script updates Vivian's Discord bot with:
+- Work-calendar specific integration (BG_WORK_CALENDAR_ID)
+- Enhanced calendar functions with Toronto timezone
+- OpenAI assistant function handling
+- Work calendar data sharing capabilities for Rose integration
+"""
+
+import os
+import sys
+import json
+import shutil
+from datetime import datetime
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Environment variables loaded from .env file")
+except ImportError:
+    print("⚠️ python-dotenv not installed. Trying to read .env manually...")
+    # Fallback: read .env manually
+    if os.path.exists('.env'):
+        with open('.env', 'r') as f:
+            for line in f:
+                if line.strip() and not line.startswith('#'):
+                    key, value = line.strip().split('=', 1)
+                    os.environ[key] = value.strip('"').strip("'")
+        print("✅ Environment variables loaded manually from .env file")
+    else:
+        print("❌ No .env file found in current directory")
+except Exception as e:
+    print(f"⚠️ Error loading .env file: {e}")
+
+def backup_current_file():
+    """Create backup of current main.py"""
+    if os.path.exists('main.py'):
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_name = f'main_backup_{timestamp}.py'
+        shutil.copy2('main.py', backup_name)
+        print(f"✅ Backup created: {backup_name}")
+        return backup_name
+    return None
+
+def validate_environment():
+    """Check for required environment variables"""
+    print("🔍 Checking environment variables...")
+    
+    # Debug: Show current working directory and .env file existence
+    print(f"📂 Current directory: {os.getcwd()}")
+    print(f"📄 .env file exists: {os.path.exists('.env')}")
+    
+    if os.path.exists('.env'):
+        print("📋 .env file contents preview:")
+        with open('.env', 'r') as f:
+            lines = f.readlines()
+            for i, line in enumerate(lines[:5]):  # Show first 5 lines
+                if line.strip() and not line.startswith('#'):
+                    key = line.split('=')[0]
+                    print(f"   {i+1}. {key}=***")
+                else:
+                    print(f"   {i+1}. {line.strip()}")
+    
+    required_vars = [
+        'DISCORD_TOKEN',
+        'VIVIAN_ASSISTANT_ID', 
+        'OPENAI_API_KEY',
+        'GOOGLE_SERVICE_ACCOUNT_JSON'
+    ]
+    
+    recommended_vars = [
+        'BG_WORK_CALENDAR_ID',  # New work calendar variable
+        'BRAVE_API_KEY'
+    ]
+    
+    missing_required = []
+    missing_recommended = []
+    found_vars = []
+    
+    print("🔎 Checking required variables:")
+    for var in required_vars:
+        value = os.getenv(var)
+        if not value:
+            missing_required.append(var)
+            print(f"   ❌ {var}: Not found")
+        else:
+            found_vars.append(var)
+            print(f"   ✅ {var}: Found ({'***' + value[-4:] if len(value) > 4 else '***'})")
+    
+    print("🔎 Checking recommended variables:")
+    for var in recommended_vars:
+        value = os.getenv(var)
+        if not value:
+            missing_recommended.append(var)
+            print(f"   ⚠️ {var}: Not found")
+        else:
+            found_vars.append(var)
+            print(f"   ✅ {var}: Found ({'***' + value[-4:] if len(value) > 4 else '***'})")
+    
+    if missing_required:
+        print(f"\n❌ Missing required environment variables: {', '.join(missing_required)}")
+        print("\n💡 Make sure your .env file contains:")
+        for var in missing_required:
+            print(f"   {var}=your_value_here")
+        return False
+    
+    if missing_recommended:
+        print(f"\n⚠️ Missing recommended environment variables: {', '.join(missing_recommended)}")
+        print("   BG_WORK_CALENDAR_ID is needed for work calendar access")
+    
+    print(f"\n✅ Found {len(found_vars)} environment variables")
+    return True
+
+def create_vivian_main_file():
+    """Create the main.py file directly with complete enhanced Vivian code"""
+    
+    vivian_code = '''#!/usr/bin/env python3
+"""
 VIVIAN SPENCER - DISCORD BOT (ENHANCED WORK CALENDAR INTEGRATION)
 PR & Communications Specialist with Work Calendar Focus & Rose Integration
 PHASES 1-4: Work Calendar + Enhanced Functions + OpenAI Integration + Rose Communication
@@ -223,7 +342,7 @@ def format_work_event(event, user_timezone=None):
 def get_work_schedule_today():
     """Get today's work schedule for PR planning"""
     if not calendar_service or not work_calendar_accessible:
-        return "📅 **Today's Work Schedule:** Work calendar integration not available\n\n💼 **PR Planning:** Review calendar manually for meeting prep and communications timing"
+        return "📅 **Today's Work Schedule:** Work calendar integration not available\\n\\n💼 **PR Planning:** Review calendar manually for meeting prep and communications timing"
     
     try:
         toronto_tz = pytz.timezone('America/Toronto')
@@ -237,7 +356,7 @@ def get_work_schedule_today():
         events = get_work_calendar_events(today_utc, tomorrow_utc)
         
         if not events:
-            return "📅 **Today's Work Schedule:** No work meetings scheduled\n\n💼 **PR Opportunity:** Perfect day for strategic communications, content creation, and outreach"
+            return "📅 **Today's Work Schedule:** No work meetings scheduled\\n\\n💼 **PR Opportunity:** Perfect day for strategic communications, content creation, and outreach"
         
         formatted_events = []
         for event in events:
@@ -246,7 +365,7 @@ def get_work_schedule_today():
         
         header = f"📅 **Today's Work Schedule:** {len(events)} meetings/events"
         
-        return header + "\n\n" + "\n".join(formatted_events[:10])  # Limit to 10 events
+        return header + "\\n\\n" + "\\n".join(formatted_events[:10])  # Limit to 10 events
         
     except Exception as e:
         print(f"❌ Work calendar error: {e}")
@@ -341,19 +460,19 @@ async def export_for_rose_command(ctx):
             export_data = export_work_calendar_for_rose()
             
             if export_data['status'] == 'success':
-                response = f"📅 **Work Calendar Export for Rose:**\n\n{export_data['message']}\n\n"
+                response = f"📅 **Work Calendar Export for Rose:**\\n\\n{export_data['message']}\\n\\n"
                 
                 if export_data['events']:
-                    response += "**Sample Events:**\n"
+                    response += "**Sample Events:**\\n"
                     for event in export_data['events'][:3]:  # Show first 3 events
-                        response += f"• {event['date']} at {event['time']}: {event['title']}\n"
+                        response += f"• {event['date']} at {event['time']}: {event['title']}\\n"
                     
                     if len(export_data['events']) > 3:
-                        response += f"\n*...and {len(export_data['events']) - 3} more events*"
+                        response += f"\\n*...and {len(export_data['events']) - 3} more events*"
                 else:
                     response += "No work events found for next 3 days."
                     
-                response += f"\n\n🤝 **Rose Integration:** Data ready for executive briefing"
+                response += f"\\n\\n🤝 **Rose Integration:** Data ready for executive briefing"
             else:
                 response = f"❌ **Export Failed:** {export_data['message']}"
             
@@ -420,3 +539,119 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     except Exception as e:
         print(f"❌ Bot failed to start: {e}")
+'''
+    
+    return vivian_code
+
+def write_updated_file():
+    """Write the updated code to main.py"""
+    try:
+        print("📝 Creating enhanced Vivian main.py...")
+        
+        # Get the complete code
+        updated_code = create_vivian_main_file()
+        
+        with open('main.py', 'w', encoding='utf-8') as f:
+            f.write(updated_code)
+        
+        print("✅ Enhanced main.py written successfully")
+        print("📋 Note: This is a core version with essential work calendar features")
+        return True
+    except Exception as e:
+        print(f"❌ Error writing updated file: {e}")
+        return False
+
+def main():
+    """Main script execution"""
+    print("🚀 VIVIAN SPENCER CALENDAR INTEGRATION UPDATE SCRIPT")
+    print("=" * 60)
+    print("Phases 1-4: Work Calendar + Enhanced Functions + OpenAI Integration + Rose Communication")
+    print()
+    
+    # Step 1: Validate environment
+    print("📋 Step 1: Validating environment variables...")
+    if not validate_environment():
+        print("❌ Environment validation failed. Please check your .env file.")
+        return
+    print("✅ Environment validation passed")
+    print()
+    
+    # Step 2: Backup current file
+    print("📋 Step 2: Creating backup of current main.py...")
+    backup_file = backup_current_file()
+    if backup_file:
+        print(f"✅ Backup created: {backup_file}")
+    else:
+        print("⚠️ No existing main.py found - creating new file")
+    print()
+    
+    # Step 3: Write updated code
+    print("📋 Step 3: Writing enhanced Vivian code...")
+    if write_updated_file():
+        print("✅ Updated code written successfully")
+    else:
+        print("❌ Failed to write updated code")
+        return
+    print()
+    
+    # Step 4: Summary
+    print("🎉 UPDATE COMPLETE!")
+    print("=" * 60)
+    print("✅ Phases 1-4 implemented:")
+    print("  📅 Phase 1: Work calendar focus (BG_WORK_CALENDAR_ID)")
+    print("  🔧 Phase 2: Enhanced calendar functions with Toronto timezone")
+    print("  🤖 Phase 3: OpenAI assistant function handling")
+    print("  🤝 Phase 4: Rose integration capabilities")
+    print()
+    print("📋 NEW FEATURES:")
+    print("  • Work calendar integration (BG work calendar only)")
+    print("  • Enhanced Toronto timezone handling")
+    print("  • Work schedule viewing and briefings")
+    print("  • Meeting-aware PR planning")
+    print("  • Work calendar export for Rose integration")
+    print("  • Enhanced Discord commands")
+    print()
+    print("🔧 REQUIRED ENVIRONMENT VARIABLES:")
+    print("  • BG_WORK_CALENDAR_ID (new - for work calendar access)")
+    print("  • GOOGLE_SERVICE_ACCOUNT_JSON (existing)")
+    print("  • VIVIAN_ASSISTANT_ID (existing)")
+    print("  • DISCORD_TOKEN (existing)")
+    print("  • OPENAI_API_KEY (existing)")
+    print()
+    print("📱 NEW COMMANDS:")
+    print("  • !work-today - Today's work schedule")
+    print("  • !export-for-rose - Export work calendar for Rose integration")
+    print("  • !status - Enhanced status with work calendar info")
+    print()
+    print("🚀 NEXT STEPS:")
+    print("  1. Set BG_WORK_CALENDAR_ID in your environment variables")
+    print("  2. Ensure Google service account has access to BG work calendar")
+    print("  3. Test the bot with: python3 main.py")
+    print("  4. Try work calendar commands in Discord")
+    print("  5. Test Rose integration with work calendar export")
+    print()
+    print("💡 TESTING COMMANDS:")
+    print("  • @Vivian what meetings do I have today?")
+    print("  • !work-today")
+    print("  • !export-for-rose")
+    print("  • !status")
+    print()
+    
+    if backup_file:
+        print(f"🔄 ROLLBACK: If issues occur, restore from {backup_file}")
+    
+    print("=" * 60)
+    print("📋 This creates a working core version of enhanced Vivian.")
+    print("📋 All essential work calendar features are included.")
+    print("📋 The bot is ready for testing and Rose integration!")
+    print()
+    print("🐍 PYTHON3 USAGE:")
+    print("  Run script: python3 update_vivian_calendar_integration.py")
+    print("  Run bot: python3 main.py")
+    print("  Install deps: pip3 install -r requirements.txt")
+
+if __name__ == "__main__":
+    print("🐍 Python3 Environment Detected")
+    print("📋 Make sure you have installed: pip3 install python-dotenv")
+    print()
+    main()
