@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """
-VIVIAN SPENCER - DISCORD BOT (CRASH FIX)
 VIVIAN SPENCER - DISCORD BOT (ENHANCED WORK CALENDAR INTEGRATION)
 PR & Communications Specialist with Work Calendar Focus & Rose Integration
 PHASES 1-4: Work Calendar + Enhanced Functions + OpenAI Integration + Rose Communication
