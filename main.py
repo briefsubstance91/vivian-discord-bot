@@ -30,6 +30,53 @@ ASSISTANT_NAME = "Vivian Spencer"
 ASSISTANT_ROLE = "PR & Communications Specialist (Complete Enhanced)"
 ALLOWED_CHANNELS = ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general']
 
+# Vivian configuration for Universal Status System
+VIVIAN_CONFIG = {
+    "name": "Vivian Spencer",
+    "role": "PR & Communications Specialist",
+    "description": "Strategic communications expert with work calendar integration, PR research, and Rose coordination capabilities",
+    "emoji": "💼",
+    "color": 0x9C27B0,  # Purple for PR/Communications
+    "specialties": [
+        "💼 PR Strategy & Communications",
+        "📅 Work Calendar Integration", 
+        "📊 Media Relations & Research",
+        "🎯 Stakeholder Management",
+        "🤝 Rose Executive Coordination"
+    ],
+    "capabilities": [
+        "Work-focused calendar coordination with PR context",
+        "Strategic PR research and news monitoring",
+        "Communications planning and stakeholder messaging",
+        "Meeting preparation and media intelligence",
+        "Rose integration for comprehensive executive assistance"
+    ],
+    "example_requests": [
+        "@Vivian give me my work briefing with PR context",
+        "@Vivian research crisis communication strategies",
+        "@Vivian what's on my work calendar today?",
+        "@Vivian monitor news about our industry",
+        "@Vivian export my work data for Rose",
+        "@Vivian help me prepare for today's stakeholder meeting"
+    ],
+    "commands": [
+        "!work-briefing - Work morning briefing with PR context",
+        "!work-today - Today's work schedule",
+        "!work-upcoming [days] - Upcoming work events (default: 7)",
+        "!work-schedule [timeframe] - Flexible work schedule view",
+        "!pr-research <query> - Strategic PR research",
+        "!news-monitor <query> - News monitoring and analysis",
+        "!communications <topic> - Communications strategy insights",
+        "!export-for-rose - Export work data for Rose coordination",
+        "!status - Show system status",
+        "!ping - Test connectivity",
+        "!help - Show this help message"
+    ],
+    "channels": ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general']
+}
+
+ASSISTANT_CONFIG = VIVIAN_CONFIG
+
 # Environment variables with fallbacks
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("VIVIAN_DISCORD_TOKEN")
 ASSISTANT_ID = os.getenv("VIVIAN_ASSISTANT_ID") or os.getenv("ASSISTANT_ID")
@@ -902,26 +949,31 @@ async def send_long_message(original_message, response):
 
 @bot.event
 async def on_ready():
-    """Bot startup with comprehensive initialization"""
-    try:
-        print(f"✅ {ASSISTANT_NAME} has awakened!")
-        print(f"🤖 Connected as: {bot.user.name} (ID: {bot.user.id})")
-        print(f"🎯 Role: {ASSISTANT_ROLE}")
-        print(f"📅 Work Calendar Status: {len(accessible_calendars)} accessible calendars")
-        print(f"🔍 PR Research: {'Enabled' if BRAVE_API_KEY else 'Disabled'}")
-        print(f"🏢 Allowed channels: {', '.join(ALLOWED_CHANNELS)}")
-        
-        await bot.change_presence(
-            status=discord.Status.online,
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name="💼 Work Calendar & PR Strategy"
-            )
+    """Bot startup sequence"""
+    print(f"🚀 Starting {ASSISTANT_NAME}...")
+    
+    # PR Research API test
+    if BRAVE_API_KEY:
+        print("🔧 PR Research API Configuration Status:")
+        print(f" API Key: ✅ Configured")
+        print(f" Search Functionality: ✅ PR Research & News Monitoring Ready")
+    
+    # Final status
+    print(f"📅 Work Calendar Service: {'✅ Ready' if accessible_calendars else '❌ Not available'}")
+    print(f"📧 Gmail Service: {'✅ Ready' if gmail_service else '❌ Not available'}")
+    print(f"✅ {ASSISTANT_NAME} is online!")
+    print(f"🤖 Connected as {bot.user.name}#{bot.user.discriminator} (ID: {bot.user.id})")
+    print(f"📅 Work Calendar Status: {'✅ Integrated' if accessible_calendars else '❌ Disabled'}")
+    print(f"🔍 PR Research: {'✅ Available' if BRAVE_API_KEY else '⚠️ Limited'}")
+    print(f"🎯 Allowed Channels: {', '.join(ALLOWED_CHANNELS)}")
+    
+    await bot.change_presence(
+        status=discord.Status.online,
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="💼 PR Strategy & Work Calendar"
         )
-        print("💼 Vivian is ready for complete PR & communications assistance!")
-        
-    except Exception as e:
-        print(f"❌ Startup error: {e}")
+    )
 
 @bot.event
 async def on_error(event, *args, **kwargs):
@@ -937,14 +989,10 @@ async def on_message(message):
         
         await bot.process_commands(message)
         
-        channel_name = message.channel.name.lower() if hasattr(message.channel, 'name') else 'dm'
         is_dm = isinstance(message.channel, discord.DMChannel)
-        is_allowed_channel = any(allowed in channel_name for allowed in ALLOWED_CHANNELS)
         
-        if not (is_dm or is_allowed_channel):
-            return
-
-        if bot.user.mentioned_in(message) or is_dm:
+        # Check if bot is mentioned and in allowed channel (matching Rose's pattern)
+        if bot.user.mentioned_in(message) and (is_dm or message.channel.name in ALLOWED_CHANNELS):
             
             message_key = f"{message.author.id}_{message.content[:50]}"
             current_time = time.time()
@@ -984,6 +1032,9 @@ async def on_message(message):
 @bot.command(name='ping')
 async def ping_command(ctx):
     """Test Vivian's connectivity with PR flair"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         latency = round(bot.latency * 1000)
         await ctx.send(f"💼 Pong! PR response time: {latency}ms")
@@ -993,44 +1044,91 @@ async def ping_command(ctx):
 
 @bot.command(name='help')
 async def help_command(ctx):
-    """Enhanced help command"""
+    """Enhanced help command with Discord embeds"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
-        help_text = f"""💼 **{ASSISTANT_NAME} - PR & Communications Commands**
-
-**📅 Work Calendar & Scheduling:**
-• `!work-today` - Today's work schedule with PR context
-• `!work-upcoming [days]` - Upcoming work events (default 7 days)
-• `!work-briefing` / `!work-daily` / `!work-morning` - Work morning briefing
-• `!work-schedule [timeframe]` - Flexible work schedule view
-• `!work-agenda` - Comprehensive work agenda overview
-
-**🔍 PR & Communications Research:**
-• `!pr-research <query>` - Strategic PR research
-• `!news-monitor <query>` - News monitoring and analysis
-• `!communications <topic>` - Communications strategy insights
-
-**🤝 Rose Integration:**
-• `!export-for-rose` - Export work data for Rose's executive briefings
-• `!coordinate-with-rose` - Coordinate scheduling with Rose
-
-**💼 PR Functions:**
-• `!status` - System and work calendar status
-• `!ping` - Test connectivity
-• `!help` - This command menu
-
-**📱 Usage:**
-• Mention @{bot.user.name if bot.user else 'Vivian'} in any message
-• Available in: {', '.join(ALLOWED_CHANNELS)}
-
-**💡 Example Commands:**
-• `!work-briefing` - Get comprehensive work morning briefing
-• `!work-today` - See today's work schedule with PR context
-• `!work-upcoming 3` - See next 3 days of work events
-• `!pr-research crisis communication` - Research PR strategies
-• "What's my work schedule today?" - Natural language request
-"""
+        config = ASSISTANT_CONFIG
         
-        await ctx.send(help_text)
+        embed = discord.Embed(
+            title=f"{config['emoji']} {config['name']} - PR & Communications Commands",
+            description=config['description'],
+            color=config['color']
+        )
+        
+        # Main usage
+        embed.add_field(
+            name="💬 AI Assistant",
+            value=f"• Mention @{config['name']} for advanced PR assistance\n• Work calendar management with communications context\n• Strategic PR research and stakeholder coordination",
+            inline=False
+        )
+        
+        # Commands - Split into sections for better organization
+        calendar_commands = [
+            "!work-briefing - Work morning briefing with PR context",
+            "!work-today - Today's work schedule", 
+            "!work-upcoming [days] - Upcoming work events (default: 7)",
+            "!work-schedule [timeframe] - Flexible work schedule view",
+            "!work-agenda - Comprehensive work agenda overview"
+        ]
+        
+        pr_commands = [
+            "!pr-research <query> - Strategic PR research",
+            "!news-monitor <query> - News monitoring and analysis",
+            "!communications <topic> - Communications strategy insights"
+        ]
+        
+        integration_commands = [
+            "!export-for-rose - Export work data for Rose coordination",
+            "!coordinate-with-rose - Coordinate scheduling with Rose"
+        ]
+        
+        system_commands = [
+            "!status - System status",
+            "!ping - Test response time",
+            "!help - This message"
+        ]
+        
+        embed.add_field(
+            name="📅 Work Calendar & Scheduling",
+            value="\n".join([f"• {cmd}" for cmd in calendar_commands]),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔍 PR & Communications Research",
+            value="\n".join([f"• {cmd}" for cmd in pr_commands]),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🤝 Rose Integration",
+            value="\n".join([f"• {cmd}" for cmd in integration_commands]),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⚙️ System",
+            value="\n".join([f"• {cmd}" for cmd in system_commands]),
+            inline=False
+        )
+        
+        # Example requests
+        embed.add_field(
+            name="💡 Example AI Requests",
+            value="\n".join([f"• {req}" for req in config['example_requests'][:3]]),
+            inline=False
+        )
+        
+        # Channels
+        embed.add_field(
+            name="🎯 Active Channels",
+            value=", ".join([f"#{ch}" for ch in config['channels']]),
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
         
     except Exception as e:
         print(f"❌ Help command error: {e}")
@@ -1038,46 +1136,66 @@ async def help_command(ctx):
 
 @bot.command(name='status')
 async def status_command(ctx):
-    """PR system status with comprehensive diagnostics"""
+    """PR system status with comprehensive diagnostics using Discord embeds"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
-        calendar_status = "❌ No work calendars accessible"
-        if accessible_calendars:
-            calendar_names = [name for name, _, _ in accessible_calendars]
-            calendar_status = f"✅ {len(accessible_calendars)} work calendars: {', '.join(calendar_names)}"
+        config = ASSISTANT_CONFIG
         
-        research_status = "✅ Enabled" if BRAVE_API_KEY else "❌ Disabled"
+        embed = discord.Embed(
+            title=f"{config['emoji']} {config['name']} - System Status",
+            description=config['description'],
+            color=config['color']
+        )
+        
+        # Core Systems
         assistant_status = "✅ Connected" if ASSISTANT_ID else "❌ Not configured"
+        embed.add_field(
+            name="🤖 Core Systems",
+            value=f"✅ Discord Connected\n{assistant_status} OpenAI Assistant\n{'✅' if BRAVE_API_KEY else '❌'} PR Research API",
+            inline=True
+        )
         
-        sa_info = "Not configured"
-        if service_account_email:
-            sa_info = f"✅ {service_account_email}"
+        # Work Calendar Integration
+        calendar_status = '✅' if accessible_calendars else '❌'
+        calendar_count = len(accessible_calendars) if accessible_calendars else 0
+        embed.add_field(
+            name="📅 Work Calendar Integration",
+            value=f"{calendar_status} Calendar Service\n{'✅' if gmail_service else '❌'} Gmail Service\n📊 {calendar_count} Work Calendar(s)",
+            inline=True
+        )
         
-        status_text = f"""💼 **{ASSISTANT_NAME} PR Status**
-
-**🤖 Core Systems:**
-• Discord: ✅ Connected as {bot.user.name if bot.user else 'Unknown'}
-• OpenAI Assistant: {assistant_status}
-• Service Account: {sa_info}
-
-**📅 Work Calendar Integration:**
-• Status: {calendar_status}
-• Timezone: 🇨🇦 Toronto (America/Toronto)
-• Gmail Access: {'✅ Connected' if gmail_service else '❌ Not configured'}
-
-**🔍 PR Research:**
-• Brave Search API: {research_status}
-• News Monitoring: {research_status}
-
-**💼 PR Features:**
-• Active conversations: {len(user_conversations)}
-• Channels: {', '.join(ALLOWED_CHANNELS)}
-• Rose Integration: {'✅ Available' if accessible_calendars else '❌ Limited'}
-
-**⚡ Performance:**
-• Uptime: Ready for PR assistance
-• Memory: {len(processing_messages)} processing"""
+        # External APIs
+        search_status = '✅' if BRAVE_API_KEY else '❌'
+        embed.add_field(
+            name="🔍 External APIs", 
+            value=f"{search_status} Brave Search\n{search_status} News Monitoring\n🌐 PR Research Ready",
+            inline=True
+        )
         
-        await ctx.send(status_text)
+        # Specialties
+        embed.add_field(
+            name="🎯 PR Specialties",
+            value="\n".join([f"• {spec}" for spec in config['specialties']]),
+            inline=False
+        )
+        
+        # Performance & Usage
+        embed.add_field(
+            name="💼 PR Performance",
+            value=f"• Active conversations: {len(user_conversations)}\n• Rose Integration: {'✅ Available' if accessible_calendars else '❌ Limited'}\n• Work Calendar Focus: 🇨🇦 Toronto timezone",
+            inline=True
+        )
+        
+        # Usage
+        embed.add_field(
+            name="💡 Usage",
+            value=f"• Mention @{config['name']} for PR assistance\n• Use commands for quick work calendar functions\n• Active in: {', '.join([f'#{ch}' for ch in config['channels'][:3]])}{'...' if len(config['channels']) > 3 else ''}",
+            inline=True
+        )
+        
+        await ctx.send(embed=embed)
         
     except Exception as e:
         print(f"❌ Status command error: {e}")
@@ -1086,6 +1204,9 @@ async def status_command(ctx):
 @bot.command(name='work-today')
 async def work_today_command(ctx):
     """Today's work schedule command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             schedule = get_work_schedule_today()
@@ -1097,6 +1218,9 @@ async def work_today_command(ctx):
 @bot.command(name='work-upcoming')
 async def work_upcoming_command(ctx, days: int = 7):
     """Upcoming work events command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             days = max(1, min(days, 30))
@@ -1109,6 +1233,9 @@ async def work_upcoming_command(ctx, days: int = 7):
 @bot.command(name='work-briefing')
 async def work_briefing_command(ctx):
     """Work morning briefing command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             briefing = get_work_morning_briefing()
@@ -1120,6 +1247,9 @@ async def work_briefing_command(ctx):
 @bot.command(name='work-daily')
 async def work_daily_command(ctx):
     """Work daily briefing - alias for work-briefing"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             briefing = get_work_morning_briefing()
@@ -1131,6 +1261,9 @@ async def work_daily_command(ctx):
 @bot.command(name='work-morning')
 async def work_morning_command(ctx):
     """Work morning briefing - alias for work-briefing"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             briefing = get_work_morning_briefing()
@@ -1142,6 +1275,9 @@ async def work_morning_command(ctx):
 @bot.command(name='work-schedule')
 async def work_schedule_command(ctx, *, timeframe: str = "today"):
     """Flexible work schedule command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             timeframe_lower = timeframe.lower()
@@ -1169,6 +1305,9 @@ async def work_schedule_command(ctx, *, timeframe: str = "today"):
 @bot.command(name='work-agenda')
 async def work_agenda_command(ctx):
     """Work agenda command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             today_schedule = get_work_schedule_today()
@@ -1187,6 +1326,9 @@ async def work_agenda_command(ctx):
 @bot.command(name='export-for-rose')
 async def export_for_rose_command(ctx):
     """Export work calendar data for Rose integration"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             export_data = export_work_data_for_rose()
@@ -1219,6 +1361,9 @@ async def export_for_rose_command(ctx):
 @bot.command(name='pr-research')
 async def pr_research_command(ctx, *, query: str = None):
     """PR research command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         if not query:
             await ctx.send("💼 **PR Research Usage:** `!pr-research <your PR query>`\n\nExamples:\n• `!pr-research crisis communication strategies`\n• `!pr-research media relations best practices`")
@@ -1243,6 +1388,9 @@ async def pr_research_command(ctx, *, query: str = None):
 @bot.command(name='news-monitor')
 async def news_monitor_command(ctx, *, query: str = None):
     """News monitoring command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         if not query:
             await ctx.send("📰 **News Monitor Usage:** `!news-monitor <your news query>`\n\nExamples:\n• `!news-monitor technology industry trends`\n• `!news-monitor crisis communication examples`")
@@ -1267,6 +1415,9 @@ async def news_monitor_command(ctx, *, query: str = None):
 @bot.command(name='communications')
 async def communications_command(ctx, *, topic: str = None):
     """Communications strategy insights command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         if not topic:
             await ctx.send("💼 **Communications Usage:** `!communications <communications topic>`\n\nExamples:\n• `!communications stakeholder engagement`\n• `!communications internal communications`")
@@ -1285,6 +1436,9 @@ async def communications_command(ctx, *, topic: str = None):
 @bot.command(name='coordinate-with-rose')
 async def coordinate_with_rose_command(ctx):
     """Coordinate with Rose command"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
     try:
         async with ctx.typing():
             user_id = str(ctx.author.id)
@@ -1321,18 +1475,7 @@ async def on_command_error(ctx, error):
 
 if __name__ == "__main__":
     try:
-        print(f"🚀 Launching {ASSISTANT_NAME}...")
-        print(f"📅 Work Calendar API: {bool(accessible_calendars)} work calendars accessible")
-        print(f"🔍 PR Research: {bool(BRAVE_API_KEY)}")
-        print(f"📧 Gmail Integration: {bool(gmail_service)}")
-        print(f"🇨🇦 Timezone: Toronto (America/Toronto)")
-        print("🎯 Starting Discord bot...")
-        
         bot.run(DISCORD_TOKEN)
-    except KeyboardInterrupt:
-        print("\n🛑 Vivian shutdown requested")
     except Exception as e:
-        print(f"❌ Critical error starting Vivian: {e}")
-        print(f"📋 Traceback: {traceback.format_exc()}")
-    finally:
-        print("💼 Vivian Spencer shutting down gracefully...")
+        print(f"❌ CRITICAL: Bot failed to start: {e}")
+        exit(1)
