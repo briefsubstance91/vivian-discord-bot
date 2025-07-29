@@ -15,7 +15,8 @@ import time
 import re
 from dotenv import load_dotenv
 from openai import OpenAI
-from google.oauth2.service_account import Credentials
+from google.oauth2.credentials import Credentials as OAuthCredentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import traceback
@@ -36,7 +37,7 @@ VIVIAN_CONFIG = {
     "role": "PR & Communications Specialist",
     "description": "Strategic communications expert with work calendar integration, PR research, and Rose coordination capabilities",
     "emoji": "💼",
-    "color": 0x9C27B0,  # Purple for PR/Communications
+    "color": 0x0F4C75,  # Sapphire blue for PR/Communications
     "specialties": [
         "💼 PR Strategy & Communications",
         "📅 Work Calendar Integration", 
@@ -83,10 +84,17 @@ ASSISTANT_ID = os.getenv("VIVIAN_ASSISTANT_ID") or os.getenv("ASSISTANT_ID")
 BRAVE_API_KEY = os.getenv('BRAVE_API_KEY')
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Work Calendar integration (Vivian's specialty)
-GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
-BG_WORK_CALENDAR_ID = os.getenv('BG_WORK_CALENDAR_ID')  # Primary work calendar
-GMAIL_ADDRESS = os.getenv('GMAIL_ADDRESS')
+# Work Calendar integration (OAuth2 like Rose)
+GMAIL_TOKEN_JSON = os.getenv('GMAIL_TOKEN_JSON')
+GMAIL_WORK_CALENDAR_ID = os.getenv('GMAIL_WORK_CALENDAR_ID')  # Work calendar only
+
+# OAuth scopes (same as Rose to avoid token refresh issues)
+CALENDAR_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/calendar'
+]
 
 # Validate critical environment variables
 if not DISCORD_TOKEN:
@@ -117,88 +125,104 @@ except Exception as e:
     print(f"❌ CRITICAL: OpenAI client initialization failed: {e}")
     exit(1)
 
-# Google Calendar and Gmail setup
+# Google Calendar setup (OAuth2 like Rose, calendar only)
 calendar_service = None
-gmail_service = None
 accessible_calendars = []
-service_account_email = None
-work_calendar_accessible = False
 
-def test_work_calendar_access(calendar_id, calendar_name):
-    """Test work calendar access with comprehensive error handling"""
-    if not calendar_service or not calendar_id:
+def initialize_google_services():
+    """Initialize Google Calendar service using OAuth2 credentials (work calendar only)"""
+    global calendar_service, accessible_calendars
+    
+    print("🔧 Initializing Google Calendar with OAuth2...")
+    
+    if not GMAIL_TOKEN_JSON:
+        print("❌ No OAuth token found - Calendar service disabled")
+        print("   Use Rose's OAuth token (GMAIL_TOKEN_JSON)")
         return False
     
     try:
-        calendar_info = calendar_service.calendars().get(calendarId=calendar_id).execute()
-        print(f"✅ {calendar_name} accessible: {calendar_info.get('summary', 'Unknown')}")
+        # Parse OAuth token (same as Rose)
+        token_info = json.loads(GMAIL_TOKEN_JSON)
         
-        now = datetime.now(pytz.UTC)
-        past_24h = now - timedelta(hours=24)
+        # Create OAuth credentials for calendar only
+        oauth_credentials = OAuthCredentials.from_authorized_user_info(
+            token_info, CALENDAR_SCOPES
+        )
         
-        events_result = calendar_service.events().list(
-            calendarId=calendar_id,
-            timeMin=past_24h.isoformat(),
-            timeMax=now.isoformat(),
-            maxResults=5,
-            singleEvents=True
-        ).execute()
+        if not oauth_credentials:
+            print("❌ Failed to create OAuth credentials")
+            return False
         
-        events = events_result.get('items', [])
-        print(f"✅ {calendar_name} events: {len(events)} found")
+        # Handle token refresh if needed
+        if oauth_credentials.expired and oauth_credentials.refresh_token:
+            try:
+                print("🔄 Refreshing OAuth token...")
+                oauth_credentials.refresh(Request())
+                print("✅ OAuth token refreshed successfully")
+            except Exception as refresh_error:
+                print(f"❌ Token refresh failed: {refresh_error}")
+                print("ℹ️  This is likely because the token was created with different scopes")
+                print("ℹ️  Continuing with existing token (may still work)...")
+                # Don't return False - try to continue with existing token
+        
+        # Check if credentials are valid (even if refresh failed)
+        if not oauth_credentials.valid:
+            if oauth_credentials.expired:
+                print("❌ OAuth credentials are expired and refresh failed")
+                print("ℹ️  You may need to re-authorize Rose's OAuth token")
+            else:
+                print("❌ OAuth credentials are invalid")
+            return False
+        
+        # Initialize calendar service only
+        calendar_service = build('calendar', 'v3', credentials=oauth_credentials)
+        print("✅ OAuth Calendar service initialized")
+        
+        # Test work calendar access only
+        test_work_calendar_access()
         
         return True
         
-    except HttpError as e:
-        error_code = e.resp.status
-        print(f"❌ {calendar_name} HTTP Error {error_code}")
+    except json.JSONDecodeError:
+        print("❌ Invalid JSON in GMAIL_TOKEN_JSON")
         return False
     except Exception as e:
-        print(f"❌ {calendar_name} error: {e}")
+        print(f"❌ Google Calendar initialization error: {e}")
         return False
 
-# Initialize Google services
-try:
-    if GOOGLE_SERVICE_ACCOUNT_JSON:
-        credentials_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
-        credentials = Credentials.from_service_account_info(
-            credentials_info,
-            scopes=[
-                'https://www.googleapis.com/auth/calendar.readonly',
-                'https://www.googleapis.com/auth/gmail.readonly'
-            ]
-        )
-        calendar_service = build('calendar', 'v3', credentials=credentials)
-        gmail_service = build('gmail', 'v1', credentials=credentials)
-        print("✅ Google services initialized")
-        
-        service_account_email = credentials_info.get('client_email')
-        print(f"📧 Service Account: {service_account_email}")
-        
-        # Test work calendar access
-        if BG_WORK_CALENDAR_ID:
-            if test_work_calendar_access(BG_WORK_CALENDAR_ID, "BG Work Calendar"):
-                accessible_calendars.append(("BG Work Calendar", BG_WORK_CALENDAR_ID, "work"))
-                work_calendar_accessible = True
-        
-        # Test primary calendar as fallback
-        if not work_calendar_accessible:
-            if test_work_calendar_access('primary', "Primary Work Calendar"):
-                accessible_calendars.append(("Primary Work Calendar", "primary", "work"))
-                work_calendar_accessible = True
-        
-        print(f"\n📅 Work calendars accessible: {len(accessible_calendars)}")
-        for name, _, _ in accessible_calendars:
-            print(f"   ✅ {name}")
-            
-    else:
-        print("⚠️ Google Calendar credentials not found")
-        
-except Exception as e:
-    print(f"❌ Google services setup error: {e}")
-    calendar_service = None
-    gmail_service = None
+def test_work_calendar_access():
+    """Test access to work calendar only"""
+    global accessible_calendars
+    
+    if not calendar_service:
+        return
+    
     accessible_calendars = []
+    
+    if not GMAIL_WORK_CALENDAR_ID:
+        print("⚠️ 💼 Work Calendar: No calendar ID configured (GMAIL_WORK_CALENDAR_ID)")
+        return
+        
+    try:
+        # Test work calendar access
+        calendar_info = calendar_service.calendars().get(calendarId=GMAIL_WORK_CALENDAR_ID).execute()
+        accessible_calendars.append(("💼 Work Calendar", GMAIL_WORK_CALENDAR_ID))
+        print(f"✅ 💼 Work Calendar accessible: {calendar_info.get('summary', 'Work Calendar')}")
+        
+    except HttpError as e:
+        if e.resp.status == 404:
+            print(f"❌ 💼 Work Calendar: Calendar not found (404)")
+        elif e.resp.status == 403:
+            print(f"❌ 💼 Work Calendar: Access forbidden (403)")
+        else:
+            print(f"❌ 💼 Work Calendar: HTTP error {e.resp.status}")
+    except Exception as e:
+        print(f"❌ 💼 Work Calendar: Error testing access - {e}")
+    
+    print(f"📅 Work calendar accessible: {'✅ Yes' if accessible_calendars else '❌ No'}")
+
+# Initialize Google services on startup
+initialize_google_services()
 
 # Memory and duplicate prevention systems
 user_conversations = {}
@@ -211,12 +235,15 @@ print(f"💼 Starting {ASSISTANT_NAME} - {ASSISTANT_ROLE}...")
 # WORK CALENDAR FUNCTIONS (Vivian's Specialty)
 # ============================================================================
 
-def get_work_calendar_events(calendar_id, start_time, end_time, max_results=100):
+def get_work_calendar_events(start_time, end_time, max_results=100):
     """Get work calendar events with enhanced error handling"""
-    if not calendar_service:
+    if not calendar_service or not accessible_calendars:
         return []
     
     try:
+        # Use the work calendar ID from accessible_calendars
+        calendar_name, calendar_id = accessible_calendars[0]  # Only one work calendar
+        
         events_result = calendar_service.events().list(
             calendarId=calendar_id,
             timeMin=start_time.isoformat(),
@@ -230,7 +257,7 @@ def get_work_calendar_events(calendar_id, start_time, end_time, max_results=100)
         return events
         
     except Exception as e:
-        print(f"❌ Error getting work events from {calendar_id}: {e}")
+        print(f"❌ Error getting work events: {e}")
         return []
 
 def format_work_event(event, user_timezone=None):
@@ -282,19 +309,20 @@ def get_work_schedule_today():
         today_utc = today_toronto.astimezone(pytz.UTC)
         tomorrow_utc = tomorrow_toronto.astimezone(pytz.UTC)
         
-        all_events = []
+        # Get events from work calendar only
+        events = get_work_calendar_events(today_utc, tomorrow_utc)
         
-        for calendar_name, calendar_id, calendar_type in accessible_calendars:
-            events = get_work_calendar_events(calendar_id, today_utc, tomorrow_utc)
-            for event in events:
-                formatted = format_work_event(event, toronto_tz)
-                all_events.append((event, formatted, calendar_type, calendar_name))
-        
-        if not all_events:
+        if not events:
             return "📅 **Today's Work Schedule:** No work meetings scheduled\n\n💼 **PR Opportunity:** Perfect day for strategic communications, content creation, and stakeholder outreach"
         
-        def get_event_time(event_tuple):
-            event = event_tuple[0]
+        # Format events
+        formatted_events = []
+        for event in events:
+            formatted = format_work_event(event, toronto_tz)
+            formatted_events.append(formatted)
+        
+        # Sort by time
+        def get_event_time(event):
             start = event['start'].get('dateTime', event['start'].get('date'))
             try:
                 if 'T' in start:
@@ -305,11 +333,10 @@ def get_work_schedule_today():
             except:
                 return datetime.now(toronto_tz)
         
-        all_events.sort(key=get_event_time)
+        events.sort(key=get_event_time)
+        formatted_events = [format_work_event(event, toronto_tz) for event in events]
         
-        formatted_events = [event_tuple[1] for event_tuple in all_events]
-        
-        header = f"📅 **Today's Work Schedule:** {len(all_events)} meetings/events"
+        header = f"📅 **Today's Work Schedule:** {len(events)} meetings/events"
         
         return header + "\n\n" + "\n".join(formatted_events[:15])
         
@@ -331,19 +358,15 @@ def get_work_upcoming_events(days=7):
         start_utc = start_toronto.astimezone(pytz.UTC)
         end_utc = end_toronto.astimezone(pytz.UTC)
         
-        all_events = []
+        # Get events from work calendar only
+        events = get_work_calendar_events(start_utc, end_utc)
         
-        for calendar_name, calendar_id, calendar_type in accessible_calendars:
-            events = get_work_calendar_events(calendar_id, start_utc, end_utc)
-            for event in events:
-                all_events.append((event, calendar_type, calendar_name))
-        
-        if not all_events:
+        if not events:
             return f"📅 **Upcoming Work Events ({days} days):** No work meetings scheduled\n\n💼 **PR Strategy:** Clear calendar for strategic planning and stakeholder engagement"
         
         events_by_date = defaultdict(list)
         
-        for event, calendar_type, calendar_name in all_events:
+        for event in events:
             start = event['start'].get('dateTime', event['start'].get('date'))
             
             try:
@@ -363,7 +386,7 @@ def get_work_upcoming_events(days=7):
                 continue
         
         formatted = []
-        total_events = len(all_events)
+        total_events = len(events)
         
         for date, day_events in list(events_by_date.items())[:7]:
             formatted.append(f"**{date}**")
@@ -395,15 +418,12 @@ def get_work_morning_briefing():
         tomorrow_utc = tomorrow_toronto.astimezone(pytz.UTC)
         day_after_utc = day_after_toronto.astimezone(pytz.UTC)
         
-        tomorrow_events = []
-        
-        for calendar_name, calendar_id, calendar_type in accessible_calendars:
-            events = get_work_calendar_events(calendar_id, tomorrow_utc, day_after_utc)
-            tomorrow_events.extend([(event, calendar_type, calendar_name) for event in events])
+        # Get tomorrow's work events from work calendar only
+        tomorrow_events = get_work_calendar_events(tomorrow_utc, day_after_utc)
         
         if tomorrow_events:
             tomorrow_formatted = []
-            for event, calendar_type, calendar_name in tomorrow_events[:4]:
+            for event in tomorrow_events[:4]:
                 formatted = format_work_event(event, toronto_tz)
                 tomorrow_formatted.append(formatted)
             tomorrow_preview = "📅 **Tomorrow's Work Preview:**\n" + "\n".join(tomorrow_formatted)
@@ -436,16 +456,13 @@ def export_work_data_for_rose():
         # Get next 7 days of work events for Rose
         end_time = now + timedelta(days=7)
         
-        all_events = []
-        
-        for calendar_name, calendar_id, calendar_type in accessible_calendars:
-            events = get_work_calendar_events(calendar_id, now, end_time)
-            all_events.extend([(event, calendar_name) for event in events])
+        # Get events from work calendar only
+        events = get_work_calendar_events(now, end_time)
         
         formatted_events = []
         pr_insights = []
         
-        for event, calendar_name in all_events:
+        for event in events:
             start = event['start'].get('dateTime', event['start'].get('date'))
             title = event.get('summary', 'Untitled Meeting')
             location = event.get('location', '')
@@ -464,7 +481,7 @@ def export_work_data_for_rose():
                     'title': title,
                     'location': location,
                     'type': 'work_meeting',
-                    'calendar': calendar_name
+                    'calendar': '💼 Work Calendar'
                 })
                 
                 # Generate PR insights
@@ -958,9 +975,11 @@ async def on_ready():
         print(f" API Key: ✅ Configured")
         print(f" Search Functionality: ✅ PR Research & News Monitoring Ready")
     
+    # Initialize Google services (call again in case of startup timing issues)
+    initialize_google_services()
+    
     # Final status
     print(f"📅 Work Calendar Service: {'✅ Ready' if accessible_calendars else '❌ Not available'}")
-    print(f"📧 Gmail Service: {'✅ Ready' if gmail_service else '❌ Not available'}")
     print(f"✅ {ASSISTANT_NAME} is online!")
     print(f"🤖 Connected as {bot.user.name}#{bot.user.discriminator} (ID: {bot.user.id})")
     print(f"📅 Work Calendar Status: {'✅ Integrated' if accessible_calendars else '❌ Disabled'}")
@@ -1159,10 +1178,9 @@ async def status_command(ctx):
         
         # Work Calendar Integration
         calendar_status = '✅' if accessible_calendars else '❌'
-        calendar_count = len(accessible_calendars) if accessible_calendars else 0
         embed.add_field(
             name="📅 Work Calendar Integration",
-            value=f"{calendar_status} Calendar Service\n{'✅' if gmail_service else '❌'} Gmail Service\n📊 {calendar_count} Work Calendar(s)",
+            value=f"{calendar_status} Calendar Service\n{'✅' if GMAIL_WORK_CALENDAR_ID else '❌'} Work Calendar ID\n💼 Work Calendar Focus Only",
             inline=True
         )
         
