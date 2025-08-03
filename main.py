@@ -401,13 +401,68 @@ def get_work_upcoming_events(days=7):
         return f"📅 **Upcoming Work Events ({days} days):** Error retrieving work calendar data"
 
 def get_work_morning_briefing():
-    """Work-focused morning briefing with PR intelligence"""
+    """Work-focused morning briefing with PR intelligence - includes weekend mode"""
+    toronto_tz = pytz.timezone('America/Toronto')
+    current_day = datetime.now(toronto_tz).weekday()
+    is_weekend = current_day >= 5  # Saturday=5, Sunday=6
+    current_time = datetime.now(toronto_tz).strftime('%A, %B %d')
+    
+    # Weekend mode - focus on personal time instead of work
+    if is_weekend:
+        if not calendar_service or not accessible_calendars:
+            return f"📺 **Vivian's Weekend Brief - {current_time}**\n\n✨ **Weekend Mode:** Work coordination paused for personal time\n\n📅 **Personal Calendar:** Calendar integration not available\n\n💡 **Weekend Wisdom:** This is your time for rest, creativity, and personal fulfillment. Work coordination resumes Monday!"
+        
+        try:
+            # Get any weekend events (might be personal)
+            today_toronto = datetime.now(toronto_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_toronto = today_toronto.replace(hour=23, minute=59, second=59)
+            
+            today_utc = today_toronto.astimezone(pytz.UTC)
+            tomorrow_utc = tomorrow_toronto.astimezone(pytz.UTC)
+            
+            weekend_events = get_work_calendar_events(today_utc, tomorrow_utc)
+            
+            weekend_schedule = ""
+            if weekend_events:
+                formatted_events = []
+                for event in weekend_events[:3]:
+                    # Format without work context for weekends
+                    title = event.get('summary', 'Untitled Event')
+                    start = event['start'].get('dateTime', event['start'].get('date'))
+                    
+                    if 'T' in start:
+                        utc_time = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                        local_time = utc_time.astimezone(toronto_tz)
+                        time_str = local_time.strftime('%I:%M %p')
+                        formatted_events.append(f"• {time_str}: 🌿 {title}")
+                    else:
+                        formatted_events.append(f"• All Day: 🌿 {title}")
+                
+                weekend_schedule = "📅 **Today's Personal Schedule:**\n" + "\n".join(formatted_events)
+            else:
+                weekend_schedule = "📅 **Today's Personal Schedule:** No events scheduled - perfect for relaxation!"
+            
+            briefing = f"📺 **Vivian's Weekend Coordination - {current_time}**\n\n"
+            briefing += "Good morning! Weekend personal coordination and leisure planning:\n\n"
+            briefing += f"{weekend_schedule}\n\n"
+            briefing += "✨ **Weekend Priorities:**\n"
+            briefing += "• Rest and recharge for the week ahead\n"
+            briefing += "• Personal projects and creative pursuits\n" 
+            briefing += "• Quality time with family and friends\n"
+            briefing += "• Self-care and wellness activities\n\n"
+            briefing += "💡 **Weekend Wisdom:** This is your time for rest, creativity, and personal fulfillment. Work coordination resumes Monday!"
+            
+            return briefing
+            
+        except Exception as e:
+            print(f"❌ Weekend briefing error: {e}")
+            return f"📺 **Vivian's Weekend Brief - {current_time}**\n\n✨ **Weekend Mode:** Work coordination paused for personal time\n\n❌ **Error:** Unable to load personal schedule\n\n💡 **Weekend Wisdom:** This is your time for rest, creativity, and personal fulfillment. Work coordination resumes Monday!"
+    
+    # Weekday mode - regular work focus
     if not calendar_service or not accessible_calendars:
         return "🌅 **Work Morning Briefing:** Work calendar integration not available"
     
     try:
-        toronto_tz = pytz.timezone('America/Toronto')
-        
         today_schedule = get_work_schedule_today()
         
         # Get tomorrow's work events
@@ -430,7 +485,6 @@ def get_work_morning_briefing():
         else:
             tomorrow_preview = "📅 **Tomorrow's Work Preview:** Clear schedule - strategic PR planning opportunity"
         
-        current_time = datetime.now(toronto_tz).strftime('%A, %B %d')
         briefing = f"🌅 **Good Morning! Work & PR Briefing for {current_time}**\n\n{today_schedule}\n\n{tomorrow_preview}\n\n💼 **PR Focus:** Prioritize stakeholder communications and strategic messaging"
         
         return briefing
