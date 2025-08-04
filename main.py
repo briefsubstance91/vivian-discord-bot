@@ -76,6 +76,9 @@ VIVIAN_CONFIG = {
     "channels": ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general']
 }
 
+# Constants for reducing redundant messaging
+CALENDAR_UNAVAILABLE_MSG = "Work calendar integration not available"
+
 ASSISTANT_CONFIG = VIVIAN_CONFIG
 
 # Environment variables with fallbacks
@@ -298,7 +301,7 @@ def format_work_event(event, user_timezone=None):
 def get_work_schedule_today():
     """Get today's work schedule with PR context"""
     if not calendar_service or not accessible_calendars:
-        return "📅 **Today's Work Schedule:** Work calendar integration not available\n\n💼 **PR Focus:** Review calendar manually for meeting prep and stakeholder communications"
+        return f"📅 **Today's Work Schedule:** {CALENDAR_UNAVAILABLE_MSG}\n\n💼 **PR Focus:** Review calendar manually for meeting prep and stakeholder communications"
     
     try:
         toronto_tz = pytz.timezone('America/Toronto')
@@ -347,7 +350,7 @@ def get_work_schedule_today():
 def get_work_upcoming_events(days=7):
     """Get upcoming work events with PR planning context"""
     if not calendar_service or not accessible_calendars:
-        return f"📅 **Upcoming Work Events ({days} days):** Work calendar integration not available"
+        return f"📅 **Upcoming Work Events ({days} days):** {CALENDAR_UNAVAILABLE_MSG}"
     
     try:
         toronto_tz = pytz.timezone('America/Toronto')
@@ -460,7 +463,7 @@ def get_work_morning_briefing():
     
     # Weekday mode - regular work focus
     if not calendar_service or not accessible_calendars:
-        return "🌅 **Work Morning Briefing:** Work calendar integration not available"
+        return f"🌅 **Work Morning Briefing:** {CALENDAR_UNAVAILABLE_MSG}"
     
     try:
         today_schedule = get_work_schedule_today()
@@ -498,7 +501,7 @@ def export_work_data_for_rose():
     if not calendar_service or not accessible_calendars:
         return {
             'status': 'unavailable',
-            'message': 'Work calendar integration not available',
+            'message': CALENDAR_UNAVAILABLE_MSG,
             'work_events': [],
             'pr_insights': []
         }
