@@ -1100,13 +1100,13 @@ def is_briefing_command(message):
     return detected
 
 async def handle_rose_briefing_request(message):
-    """Provide Vivian briefing response using proper Discord formatting"""
+    """Provide Vivian briefing response using OpenAI assistant"""
     try:
         async with message.channel.typing():
-            # Generate work briefing using original format
-            briefing_response = get_vivian_team_report()
+            briefing_prompt = "Provide a brief work calendar and scheduling briefing with PR context. Include today's meeting priorities, stakeholder communication focus, and strategic calendar coordination insights. Keep it professional and communications-focused."
+            briefing_response = await get_vivian_response(briefing_prompt, message.author.id)
             await send_as_assistant_bot(message.channel, briefing_response, "Vivian Spencer")
-            print(f"✨ Vivian provided briefing response in #{message.channel.name}")
+            print(f"✨ Vivian provided intelligent briefing response in #{message.channel.name}")
             
     except Exception as e:
         print(f"❌ Error generating Vivian briefing: {e}")
