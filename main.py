@@ -1100,19 +1100,18 @@ def is_briefing_command(message):
     return detected
 
 async def handle_rose_briefing_request(message):
-    """Provide Vivian briefing response using OpenAI assistant"""
+    """Provide Vivian briefing response using static template"""
     try:
         async with message.channel.typing():
-            briefing_prompt = "Provide a brief work calendar and scheduling briefing with PR context. Include today's meeting priorities, stakeholder communication focus, and strategic calendar coordination insights. Keep it professional and communications-focused."
-            briefing_response = await get_vivian_response(briefing_prompt, message.author.id)
+            briefing_response = get_vivian_report()
             await send_as_assistant_bot(message.channel, briefing_response, "Vivian Spencer")
-            print(f"✨ Vivian provided intelligent briefing response in #{message.channel.name}")
+            print(f"✨ Vivian provided static briefing response in #{message.channel.name}")
             
     except Exception as e:
         print(f"❌ Error generating Vivian briefing: {e}")
         await send_as_assistant_bot(message.channel, "💼 **Work Briefing:** Currently coordinating priorities. Full report available shortly.", "Vivian Spencer")
 
-def get_vivian_team_report(brief=False):
+def get_vivian_report(time_filter=None, brief=False):
     """Generate Vivian's Work Calendar & External Intelligence briefing"""
     # Check if it's weekend (Saturday=5, Sunday=6)
     toronto_tz = pytz.timezone('America/Toronto')
@@ -1132,73 +1131,81 @@ def get_vivian_team_report(brief=False):
             report = "📺 **Vivian's Weekend Coordination**\n"
             report += "Good morning! Weekend personal coordination and leisure planning:\n\n"
             
-            # Personal calendar only on weekends
+            # Personal schedule for weekends (simplified)
             if calendar_service:
                 try:
-                    personal_schedule = get_personal_schedule()
-                    report += f"📅 **Personal Schedule:**\n{personal_schedule}\n\n"
+                    # Use work calendar for personal events on weekends
+                    personal_schedule = get_work_schedule_today()
+                    if "No work meetings scheduled" in personal_schedule:
+                        personal_schedule = "📅 **Weekend Activities:** Clear schedule for rest and personal time"
+                    report += f"🌿 **Weekend Activities:**\n{personal_schedule}\n"
                 except Exception as e:
-                    report += "📅 **Personal Schedule:** Coordination in progress\n\n"
+                    report += "🌿 **Weekend Activities:** Available for weekend events and leisure planning\n"
+            else:
+                report += "🌿 **Weekend Activities:** Available for weekend events and leisure planning\n"
             
             report += "✨ **Weekend Priorities:**\n"
-            report += "• Rest and recharge for the week ahead\n"
-            report += "• Personal projects and creative pursuits\n" 
-            report += "• Quality time with family and friends\n"
-            report += "• Self-care and wellness activities\n\n"
-            report += "💡 **Weekend Wisdom:** This is your time for rest, creativity, and personal fulfillment. Work coordination resumes Monday!"
+            report += "• Personal time and restoration\n"
+            report += "• Family and social connections\n"
+            report += "• Leisure activities and hobbies\n"
+            report += "• Home projects and personal interests\n\n"
             
+            report += "💡 **Weekend Wisdom:** This is your time for rest, creativity, and personal fulfillment. Work coordination resumes Monday!"
             return report
     
-    # Weekday work briefing
+    # Weekday version - regular work focus
     if brief:
-        # Brief morning version
+        report = "📺 **Vivian's Work Brief**\n"
+        work_schedule = get_work_schedule_today()
+        report += f"{work_schedule}\n"
+        
+        # Quick priority check (simplified since no gmail_service)
         try:
-            briefing = get_work_morning_briefing()
-            return briefing
-        except Exception as e:
-            print(f"❌ Work morning briefing error: {e}")
-            return "💼 **Work Briefing:** Coordinating work priorities and PR strategy. Full report available shortly."
-    else:
-        # Full detailed work report
-        report = "💼 **Vivian's Work Calendar & External Intelligence**\n"
-        report += "Good morning! Your work coordination and PR priorities:\n\n"
+            if calendar_service:
+                # Check for urgent meetings
+                if "meetings" in work_schedule.lower():
+                    report += f"\n📧 **Priority Alerts:** Meeting prep required\n"
+        except:
+            pass
         
-        # Work calendar integration
-        if calendar_service:
-            try:
-                work_schedule = get_work_schedule()
-                report += f"📅 **Work Schedule:**\n{work_schedule}\n\n"
-                
-                # Meeting preparation
-                today_events = get_today_schedule()
-                meeting_count = len([line for line in today_events.split('\n') if 'meeting' in line.lower() or 'call' in line.lower()])
-                if meeting_count > 0:
-                    report += f"🤝 **Meeting Preparation:**\n"
-                    report += f"• {meeting_count} meetings scheduled - prep materials ready\n"
-                    report += "• Stakeholder briefings updated\n"
-                    report += "• PR messaging aligned with agenda\n\n"
-            except Exception as e:
-                report += "📅 **Work Schedule:** Coordination in progress\n\n"
-        
-        # PR & External Intelligence
-        report += "📰 **PR & Communications Status:**\n"
-        report += "• Media monitoring active for brand mentions\n"
-        report += "• Strategic messaging frameworks updated\n"
-        report += "• Stakeholder communications prioritized\n"
-        report += "• Crisis communication protocols ready\n\n"
-        
-        report += "🎯 **Today's PR Focus:**\n"
-        report += "• Maintain consistent brand voice across channels\n"
-        report += "• Monitor industry developments and competitive landscape\n"
-        report += "• Strengthen key stakeholder relationships\n"
-        report += "• Document successful communication strategies\n\n"
-        
-        report += "💼 **Strategic Coordination:**\n"
-        report += "• Work-life balance coordination active\n"
-        report += "• Priority alignment with strategic goals\n"
-        report += "• Executive support fully operational\n"
-        
+        report += "\n💼 **Work Focus:** Calendar coordination and priority management"
         return report
+    
+    # Full detailed report
+    report = "📺 **Vivian's Work Calendar Brief**\n"
+    report += "Good morning! Work calendar and priority management update:\n\n"
+    
+    # Work calendar (Vivian's primary responsibility)
+    work_schedule = get_work_schedule_today()
+    report += f"{work_schedule}\n"
+    
+    # Work priority assessment (simplified since no gmail_service)
+    try:
+        if calendar_service:
+            # Meeting count from calendar
+            meeting_count = work_schedule.count("meeting") + work_schedule.count("call") + work_schedule.count("Meeting") + work_schedule.count("Call")
+            if meeting_count > 0:
+                report += f"\n📧 **Work Priority Alerts:** {meeting_count} meetings flagged for prep\n"
+    except:
+        pass
+    
+    # Work coordination focus
+    report += "\n💼 **Work Coordination:**\n"
+    report += "• Calendar optimization and scheduling\n"
+    report += "• Meeting preparation and follow-up\n"
+    report += "• Work priority management\n"
+    
+    # Productivity focus
+    report += "\n📊 **Productivity Status:**\n"
+    report += "• Time blocking efficiency monitored\n"
+    report += "• Work-life balance coordination active\n"
+    report += "• Priority alignment with strategic goals\n"
+    
+    return report
+
+def get_vivian_team_report(brief=False):
+    """Generate Vivian's Work Calendar & External Intelligence briefing - legacy function"""
+    return get_vivian_report(None, brief)
 
 async def send_as_assistant_bot(channel, content, assistant_name):
     """Send message with assistant bot formatting (embed)"""
