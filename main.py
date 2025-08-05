@@ -1051,6 +1051,67 @@ async def on_ready():
         )
     )
 
+def is_rose_vivian_request(message):
+    """Detect Rose's specific Vivian request pattern"""
+    content = message.content.lower()
+    
+    # Look for Rose's specific Vivian request pattern
+    rose_vivian_patterns = [
+        '@vivian spencer' in content and 'work briefing' in content,
+        '@vivian spencer' in content and 'pr context' in content,
+        '@vivian spencer' in content and 'comprehensive work briefing' in content,
+        '@vivian spencer' in content and 'calendar details' in content
+    ]
+    
+    # Check if message is from Rose bot
+    is_from_rose = (
+        message.author.bot and
+        ('rose' in message.author.display_name.lower() or 'Rose Ashcombe' in str(message.author))
+    )
+    
+    detected = any(rose_vivian_patterns) and is_from_rose
+    
+    if detected:
+        print(f"🌹 Rose Vivian request detected from {message.author.display_name}")
+        print(f"🌹 Content preview: {content[:100]}...")
+    
+    return detected
+
+def is_briefing_command(message):
+    """Detect briefing commands that Vivian should respond to"""
+    content = message.content.lower().strip()
+    
+    # Check for briefing commands
+    briefing_commands = [
+        content.startswith('!briefing'),
+        content.startswith('!am'),
+        content.startswith('!noon'),
+        content.startswith('!pm'),
+        content.startswith('!quickbriefing'),
+        content.startswith('!teambriefing vivian'),
+        content.startswith('!teambriefing vivian spencer')
+    ]
+    
+    detected = any(briefing_commands)
+    
+    if detected:
+        print(f"💼 Vivian briefing command detected: {content[:50]}...")
+    
+    return detected
+
+async def handle_rose_briefing_request(message):
+    """Provide Vivian briefing response to Rose's request"""
+    try:
+        async with message.channel.typing():
+            # Generate work briefing
+            briefing_response = get_work_morning_briefing()
+            await message.channel.send(briefing_response)
+            print(f"✨ Vivian provided briefing response in #{message.channel.name}")
+            
+    except Exception as e:
+        print(f"❌ Error generating Vivian briefing: {e}")
+        await message.channel.send("💼 **Work Briefing:** Currently coordinating priorities. Full report available shortly.")
+
 @bot.event
 async def on_error(event, *args, **kwargs):
     """Global error handler"""
@@ -1066,6 +1127,11 @@ async def on_message(message):
         await bot.process_commands(message)
         
         is_dm = isinstance(message.channel, discord.DMChannel)
+        
+        # Check for briefing commands from any user/bot
+        if is_briefing_command(message):
+            await handle_rose_briefing_request(message)
+            return
         
         # Check if bot is mentioned and in allowed channel (matching Rose's pattern)
         if bot.user.mentioned_in(message) and (is_dm or message.channel.name in ALLOWED_CHANNELS):
