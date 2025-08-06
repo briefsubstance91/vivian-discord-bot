@@ -1111,36 +1111,112 @@ async def handle_rose_briefing_request(message):
         print(f"❌ Error generating Vivian briefing: {e}")
         await send_as_assistant_bot(message.channel, "💼 **Work Briefing:** Currently coordinating priorities. Full report available shortly.", "Vivian Spencer")
 
-def get_vivian_report(events=None, brief=False):
-    """Generate Vivian's Work & PR briefing"""
-    if brief:
-        return """💼 **Vivian Spencer**
-
-💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-💼 **Work Focus:** Calendar coordination and priority management"""
+def get_vivian_report(time_filter=None, brief=False):
+    """Generate Vivian's Work Calendar & External Intelligence briefing"""
+    # Check if it's weekend (Saturday=5, Sunday=6)
+    toronto_tz = pytz.timezone('America/Toronto')
+    current_day = datetime.now(toronto_tz).weekday()
+    is_weekend = current_day >= 5  # Saturday or Sunday
     
-    return """💼 **Vivian Spencer**
-
-💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-
-💼 **Work Focus:** Calendar coordination and priority management"""
-def get_vivian_report(events=None, brief=False):
-    """Generate Vivian's Work & PR briefing"""
-    if brief:
-        return """💼 **Vivian Spencer**
-
-💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-💼 **Work Focus:** Calendar coordination and priority management"""
+    if is_weekend:
+        # Weekend version - focus on personal coordination instead of work
+        if brief:
+            report = "📺 **Vivian's Weekend Brief**\n"
+            report += "✨ **Weekend Mode:** Work coordination paused for personal time\n"
+            report += "🌿 **Focus:** Rest, recharge, and personal activities\n"
+            report += "📅 **Personal Calendar:** Available for weekend events and leisure planning"
+            return report
+        else:
+            # Full weekend report
+            report = "📺 **Vivian's Weekend Coordination**\n"
+            report += "Good morning! Weekend personal coordination and leisure planning:\n\n"
+            
+            # Personal schedule for weekends (simplified)
+            if calendar_service:
+                try:
+                    # Use work calendar for personal events on weekends
+                    personal_schedule = get_work_schedule_today()
+                    if "No work meetings scheduled" in personal_schedule:
+                        personal_schedule = "📅 **Weekend Activities:** Clear schedule for rest and personal time"
+                    report += f"🌿 **Weekend Activities:**\n{personal_schedule}\n"
+                except Exception as e:
+                    report += "🌿 **Weekend Activities:** Available for weekend events and leisure planning\n"
+            else:
+                report += "🌿 **Weekend Activities:** Available for weekend events and leisure planning\n"
+            
+            report += "✨ **Weekend Priorities:**\n"
+            report += "• Personal time and restoration\n"
+            report += "• Family and social connections\n"
+            report += "• Leisure activities and hobbies\n"
+            report += "• Home projects and personal interests\n\n"
+            
+            report += "💡 **Weekend Wisdom:** This is your time for rest, creativity, and personal fulfillment. Work coordination resumes Monday!"
+            return report
     
-    return """💼 **Vivian Spencer**
+    # Weekday version - regular work focus
+    if brief:
+        report = "📺 **Vivian's Work Brief**\n"
+        work_schedule = get_work_schedule_today()
+        report += f"{work_schedule}\n"
+        
+        # Quick priority check (simplified since no gmail_service)
+        try:
+            if calendar_service:
+                # Check for urgent meetings
+                if "meetings" in work_schedule.lower():
+                    report += f"\n📧 **Priority Alerts:** Meeting prep required\n"
+        except:
+            pass
+        
+        report += "\n💼 **Work Focus:** Calendar coordination and priority management"
+        return report
+    
+    # Full detailed report
+    report = "📺 **Vivian's Work Calendar Brief**\n"
+    report += "Good morning! Work calendar and priority management update:\n\n"
+    
+    # Work calendar (Vivian's primary responsibility)
+    work_schedule = get_work_schedule_today()
+    report += f"{work_schedule}\n"
+    
+    # Work priority assessment (simplified since no gmail_service)
+    try:
+        if calendar_service:
+            # Meeting count from calendar
+            meeting_count = work_schedule.count("meeting") + work_schedule.count("call") + work_schedule.count("Meeting") + work_schedule.count("Call")
+            if meeting_count > 0:
+                report += f"\n📧 **Work Priority Alerts:** {meeting_count} meetings flagged for prep\n"
+    except:
+        pass
+    
+    # Work coordination focus
+    report += "\n💼 **Work Coordination:**\n"
+    report += "• Calendar optimization and scheduling\n"
+    report += "• Meeting preparation and follow-up\n"
+    report += "• Work priority management\n"
+    
+    # Productivity focus
+    report += "\n📊 **Productivity Status:**\n"
+    report += "• Time blocking efficiency monitored\n"
+    report += "• Work-life balance coordination active\n"
+    report += "• Priority alignment with strategic goals\n"
+    
+    return report
 
-💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
+def get_vivian_team_report(brief=False):
+    """Generate Vivian's Work Calendar & External Intelligence briefing - legacy function"""
+    return get_vivian_report(None, brief)
 
-💼 **Work Focus:** Calendar coordination and priority management"""
+async def send_as_assistant_bot(channel, content, assistant_name):
+    """Send message with assistant bot formatting (embed)"""
+    try:
+        embed = discord.Embed(description=content, color=0x4A90E2)  # Professional blue
+        embed.set_author(name=assistant_name)
+        await channel.send(embed=embed)
+    except Exception as e:
+        print(f"❌ Error sending embed: {e}")
+        await channel.send(f"**{assistant_name}:**\n{content}")
+
 @bot.event
 async def on_error(event, *args, **kwargs):
     """Global error handler"""
