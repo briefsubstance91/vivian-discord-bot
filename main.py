@@ -1126,11 +1126,11 @@ def get_vivian_report(events=None, brief=False):
     """Generate Vivian's Work & PR briefing"""
     if brief:
         return """
-💼 **Vivian's Work Brief**
+🐝 **Vivian's Work Brief**
 💼 **Work Schedule:** Clear - focus time available"""
     
     return """
-💼 **Vivian's Work Brief**
+🐝 **Vivian's Work Brief**
 💼 **Work Schedule:** Clear - focus time available"""
 @bot.event
 async def on_error(event, *args, **kwargs):
