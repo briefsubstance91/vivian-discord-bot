@@ -1115,7 +1115,6 @@ async def send_as_assistant_bot(channel, content, assistant_name):
     """Send message with assistant bot formatting (embed)"""
     try:
         embed = discord.Embed(description=content, color=0x1E90FF)  # Dodger blue for Vivian
-        embed.set_author(name=f"💼 {assistant_name}")
         await channel.send(embed=embed)
         print(f"✅ Sent {assistant_name} report as embed")
     except Exception as e:
@@ -1126,18 +1125,13 @@ async def send_as_assistant_bot(channel, content, assistant_name):
 def get_vivian_report(events=None, brief=False):
     """Generate Vivian's Work & PR briefing"""
     if brief:
-        return """💼 **Vivian Spencer**
-
+        return """
 💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-💼 **Work Focus:** Calendar coordination and priority management"""
+💼 **Work Schedule:** Clear - focus time available"""
     
-    return """💼 **Vivian Spencer**
-
+    return """
 💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-
-💼 **Work Focus:** Calendar coordination and priority management"""
+💼 **Work Schedule:** Clear - focus time available"""
 @bot.event
 async def on_error(event, *args, **kwargs):
     """Global error handler"""
