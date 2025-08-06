@@ -1111,21 +1111,18 @@ async def handle_rose_briefing_request(message):
         print(f"❌ Error generating Vivian briefing: {e}")
         await send_as_assistant_bot(message.channel, "💼 **Work Briefing:** Currently coordinating priorities. Full report available shortly.", "Vivian Spencer")
 
-def get_vivian_report(events=None, brief=False):
-    """Generate Vivian's Work & PR briefing"""
-    if brief:
-        return """💼 **Vivian Spencer**
+async def send_as_assistant_bot(channel, content, assistant_name):
+    """Send message with assistant bot formatting (embed)"""
+    try:
+        embed = discord.Embed(description=content, color=0x1E90FF)  # Dodger blue for Vivian
+        embed.set_author(name=f"💼 {assistant_name}")
+        await channel.send(embed=embed)
+        print(f"✅ Sent {assistant_name} report as embed")
+    except Exception as e:
+        print(f"❌ Error sending embed: {e}")
+        await channel.send(f"**💼 {assistant_name}:**\n{content}")
+        print(f"📝 Sent {assistant_name} as simple message")
 
-💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-💼 **Work Focus:** Calendar coordination and priority management"""
-    
-    return """💼 **Vivian Spencer**
-
-💼 **Vivian's Work Brief**
-💼 **Work Schedule:** Clear - focus time available
-
-💼 **Work Focus:** Calendar coordination and priority management"""
 def get_vivian_report(events=None, brief=False):
     """Generate Vivian's Work & PR briefing"""
     if brief:
