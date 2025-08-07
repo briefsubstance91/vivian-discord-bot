@@ -1123,15 +1123,14 @@ async def send_as_assistant_bot(channel, content, assistant_name):
         print(f"📝 Sent {assistant_name} as simple message")
 
 def get_vivian_report(events=None, brief=False):
-    """Generate Vivian's Work & PR briefing"""
+    """Generate Vivian's Work & PR briefing with actual calendar integration"""
     if brief:
-        return """🐝 **Vivian's Work Brief**
-
-💼 **Work Schedule:** Clear - focus time available"""
+        # Brief version - just get today's work schedule
+        work_today = get_work_schedule_today()
+        return f"🐝 **Vivian's Work Brief**\n\n{work_today}"
     
-    return """🐝 **Vivian's Work Brief**
-
-💼 **Work Schedule:** Clear - focus time available"""
+    # Full version - use the comprehensive work morning briefing
+    return get_work_morning_briefing()
 @bot.event
 async def on_error(event, *args, **kwargs):
     """Global error handler"""
