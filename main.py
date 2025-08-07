@@ -301,7 +301,7 @@ def format_work_event(event, user_timezone=None):
 def get_work_schedule_today():
     """Get today's work schedule with PR context"""
     if not calendar_service or not accessible_calendars:
-        return f"📅 **Today's Work Schedule:** {CALENDAR_UNAVAILABLE_MSG}\n\n💼 **PR Focus:** Review calendar manually for meeting prep and stakeholder communications"
+        return f"📅 **Today's Work Schedule:** {CALENDAR_UNAVAILABLE_MSG}"
     
     try:
         toronto_tz = pytz.timezone('America/Toronto')
