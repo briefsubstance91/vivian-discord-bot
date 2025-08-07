@@ -299,7 +299,7 @@ def format_work_event(event, user_timezone=None):
         return f"• All Day: {title}{location_str}"
 
 def get_work_schedule_today():
-    """Get today's work schedule with PR context"""
+    """Get today's work schedule"""
     if not calendar_service or not accessible_calendars:
         return f"📅 **Today's Work Schedule:** {CALENDAR_UNAVAILABLE_MSG}"
     
@@ -316,7 +316,7 @@ def get_work_schedule_today():
         events = get_work_calendar_events(today_utc, tomorrow_utc)
         
         if not events:
-            return "📅 **Today's Work Schedule:** No work meetings scheduled\n\n💼 **PR Opportunity:** Perfect day for strategic communications, content creation, and stakeholder outreach"
+            return "💼 **Today's Work Schedule:** No work meetings scheduled"
         
         # Format events
         formatted_events = []
@@ -339,18 +339,18 @@ def get_work_schedule_today():
         events.sort(key=get_event_time)
         formatted_events = [format_work_event(event, toronto_tz) for event in events]
         
-        header = f"📅 **Today's Work Schedule:** {len(events)} meetings/events"
+        header = f"💼 **Today's Work Schedule:** {len(events)} meetings/events"
         
         return header + "\n\n" + "\n".join(formatted_events[:15])
         
     except Exception as e:
         print(f"❌ Work calendar error: {e}")
-        return "📅 **Today's Work Schedule:** Error retrieving work calendar data"
+        return "💼 **Today's Work Schedule:** Error retrieving work calendar data"
 
 def get_work_upcoming_events(days=7):
-    """Get upcoming work events with PR planning context"""
+    """Get upcoming work events"""
     if not calendar_service or not accessible_calendars:
-        return f"📅 **Upcoming Work Events ({days} days):** {CALENDAR_UNAVAILABLE_MSG}"
+        return f"💼 **Upcoming Work Events ({days} days):** {CALENDAR_UNAVAILABLE_MSG}"
     
     try:
         toronto_tz = pytz.timezone('America/Toronto')
