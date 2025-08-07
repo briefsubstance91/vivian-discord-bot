@@ -484,11 +484,11 @@ def get_work_morning_briefing():
             for event in tomorrow_events[:4]:
                 formatted = format_work_event(event, toronto_tz)
                 tomorrow_formatted.append(formatted)
-            tomorrow_preview = "📅 **Tomorrow's Work Preview:**\n" + "\n".join(tomorrow_formatted)
+            tomorrow_preview = "💼 **Tomorrow's Work Preview:**\n" + "\n".join(tomorrow_formatted)
         else:
-            tomorrow_preview = "📅 **Tomorrow's Work Preview:** Clear schedule - strategic PR planning opportunity"
+            tomorrow_preview = "💼 **Tomorrow's Work Preview:** Clear schedule"
         
-        briefing = f"🌅 **Good Morning! Work & PR Briefing for {current_time}**\n\n{today_schedule}\n\n{tomorrow_preview}\n\n💼 **PR Focus:** Prioritize stakeholder communications and strategic messaging"
+        briefing = f"🌅 **Good Morning! Work Briefing for {current_time}**\n\n{today_schedule}\n\n{tomorrow_preview}"
         
         return briefing
         
