@@ -15,12 +15,7 @@ The API Integration blocker needs attention, but it's not derailing your core mo
 
 • On-time delivery: 85% (target is 90%)
 
-• Team utilization: 85% (optimal range)
-
-• Stakeholder satisfaction: High
-
-
-## 📊 IN PROGRESS PROJECTS
+## 👩‍🎨 Active Projects
 
 **Assistant Team Setup - 85% Complete**
 Status: Testing work briefing system
