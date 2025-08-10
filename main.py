@@ -1949,6 +1949,43 @@ async def send_automated_work_review():
     except Exception as e:
         print(f"❌ Automated work review error: {e}")
 
+@bot.command(name='links')
+async def links_command(ctx):
+    """Show Vivian's professional resource links"""
+    if ctx.channel.name not in ALLOWED_CHANNELS:
+        return
+    
+    try:
+        embed = discord.Embed(
+            title="💼 Vivian Spencer's Resources",
+            description="Professional tools, workspaces, and career resources",
+            color=0x1976D2  # Professional blue
+        )
+        
+        embed.add_field(
+            name="📧 Professional Communication",
+            value="• [Vivian's Work Email](mailto:vivian-work@proton.me)",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🄽 Workspace & Planning",
+            value="• [Notion - Vivian Spencer Work](https://www.notion.so/Vivian-Spencer_Work-2497533df46280d6ba17c472371354c6?source=copy_link)",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📃 Professional Documents",
+            value="• [BG CV 2025](https://docs.google.com/document/d/1Ei7nDb2ATinydTYr-bKiJMMJewtRJqO0MAOGU0zsQKA/edit?tab=t.0)",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        print(f"❌ Links command error: {e}")
+        await ctx.send("❌ Error displaying resource links. Please try again.")
+
 # Add test commands for the automated functions
 @bot.command(name='test-work-briefing')
 async def test_work_briefing_command(ctx):
