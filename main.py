@@ -29,7 +29,7 @@ load_dotenv()
 # Vivian's PR & Communications configuration
 ASSISTANT_NAME = "Vivian Spencer"
 ASSISTANT_ROLE = "PR & Communications Specialist (Complete Enhanced)"
-ALLOWED_CHANNELS = ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general']
+ALLOWED_CHANNELS = ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general', 'fabrics']
 
 # Vivian configuration for Universal Status System
 VIVIAN_CONFIG = {
@@ -73,7 +73,7 @@ VIVIAN_CONFIG = {
         "!ping - Test connectivity",
         "!help - Show this help message"
     ],
-    "channels": ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general']
+    "channels": ['social-overview', 'news-feed', 'external-communications', 'project-overview', 'work-inbox', 'meeting-notes', 'general', 'fabrics']
 }
 
 # Constants for reducing redundant messaging
@@ -1360,8 +1360,8 @@ async def on_message(message):
             await handle_rose_briefing_request(message)
             return
         
-        # Check if bot is mentioned and in allowed channel (matching Rose's pattern)
-        if bot.user.mentioned_in(message) and (is_dm or message.channel.name in ALLOWED_CHANNELS):
+        # Check if bot is mentioned (respond anywhere when mentioned)
+        if bot.user.mentioned_in(message):
             
             message_key = f"{message.author.id}_{message.content[:50]}"
             current_time = time.time()
@@ -1401,8 +1401,6 @@ async def on_message(message):
 @bot.command(name='ping')
 async def ping_command(ctx):
     """Test Vivian's connectivity with PR flair"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         latency = round(bot.latency * 1000)
@@ -1414,8 +1412,6 @@ async def ping_command(ctx):
 @bot.command(name='help')
 async def help_command(ctx):
     """Enhanced help command with Discord embeds"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         config = ASSISTANT_CONFIG
@@ -1508,8 +1504,6 @@ async def help_command(ctx):
 @bot.command(name='status')
 async def status_command(ctx):
     """PR system status with comprehensive diagnostics using Discord embeds"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         config = ASSISTANT_CONFIG
@@ -1574,8 +1568,6 @@ async def status_command(ctx):
 @bot.command(name='work-today')
 async def work_today_command(ctx):
     """Today's work schedule command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1588,8 +1580,6 @@ async def work_today_command(ctx):
 @bot.command(name='work-upcoming')
 async def work_upcoming_command(ctx, days: int = 7):
     """Upcoming work events command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1603,8 +1593,6 @@ async def work_upcoming_command(ctx, days: int = 7):
 @bot.command(name='work-briefing')
 async def work_briefing_command(ctx):
     """Work morning briefing command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1617,8 +1605,6 @@ async def work_briefing_command(ctx):
 @bot.command(name='work-daily')
 async def work_daily_command(ctx):
     """Work daily briefing - alias for work-briefing"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1631,8 +1617,6 @@ async def work_daily_command(ctx):
 @bot.command(name='work-morning')
 async def work_morning_command(ctx):
     """Work morning briefing - alias for work-briefing"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1645,8 +1629,6 @@ async def work_morning_command(ctx):
 @bot.command(name='work-schedule')
 async def work_schedule_command(ctx, *, timeframe: str = "today"):
     """Flexible work schedule command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1675,8 +1657,6 @@ async def work_schedule_command(ctx, *, timeframe: str = "today"):
 @bot.command(name='work-agenda')
 async def work_agenda_command(ctx):
     """Work agenda command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1696,8 +1676,6 @@ async def work_agenda_command(ctx):
 @bot.command(name='export-for-rose')
 async def export_for_rose_command(ctx):
     """Export work calendar data for Rose integration"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1731,8 +1709,6 @@ async def export_for_rose_command(ctx):
 @bot.command(name='pr-research')
 async def pr_research_command(ctx, *, query: str = None):
     """PR research command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         if not query:
@@ -1758,8 +1734,6 @@ async def pr_research_command(ctx, *, query: str = None):
 @bot.command(name='news-monitor')
 async def news_monitor_command(ctx, *, query: str = None):
     """News monitoring command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         if not query:
@@ -1785,8 +1759,6 @@ async def news_monitor_command(ctx, *, query: str = None):
 @bot.command(name='communications')
 async def communications_command(ctx, *, topic: str = None):
     """Communications strategy insights command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         if not topic:
@@ -1806,8 +1778,6 @@ async def communications_command(ctx, *, topic: str = None):
 @bot.command(name='coordinate-with-rose')
 async def coordinate_with_rose_command(ctx):
     """Coordinate with Rose command"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         async with ctx.typing():
@@ -1823,8 +1793,6 @@ async def coordinate_with_rose_command(ctx):
 @bot.command(name='workbriefing')
 async def workbriefing_command(ctx):
     """Comprehensive 9 AM work briefing with strategic context and calendar integration"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         print("🌅 Generating comprehensive work briefing...")
@@ -1849,8 +1817,6 @@ async def workbriefing_command(ctx):
 @bot.command(name='workreview')
 async def workreview_command(ctx):
     """End-of-day 4:45 PM work review and tomorrow's prep"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         print("🌆 Generating end-of-day work review...")
@@ -1952,8 +1918,6 @@ async def send_automated_work_review():
 @bot.command(name='links')
 async def links_command(ctx):
     """Show Vivian's professional resource links"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     try:
         embed = discord.Embed(
@@ -1990,8 +1954,6 @@ async def links_command(ctx):
 @bot.command(name='test-work-briefing')
 async def test_work_briefing_command(ctx):
     """Test the automated work briefing function"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     await ctx.send("🧪 Testing automated work briefing function...")
     await send_automated_work_briefing()
@@ -1999,8 +1961,6 @@ async def test_work_briefing_command(ctx):
 @bot.command(name='test-work-review')
 async def test_work_review_command(ctx):
     """Test the automated work review function"""
-    if ctx.channel.name not in ALLOWED_CHANNELS:
-        return
     
     await ctx.send("🧪 Testing automated work review function...")
     await send_automated_work_review()
