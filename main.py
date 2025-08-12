@@ -1360,6 +1360,35 @@ async def on_message(message):
             await handle_rose_briefing_request(message)
             return
         
+        # Forward fabric questions to n8n workflow (non-mentions in #fabrics)
+        if (message.channel.name == 'fabrics' and 
+            not bot.user.mentioned_in(message) and 
+            not message.author.bot and
+            len(message.content.strip()) > 3):
+            
+            try:
+                # Forward to n8n fabric expert workflow
+                async with aiohttp.ClientSession() as session:
+                    payload = {
+                        'content': message.content,
+                        'channel_name': message.channel.name,
+                        'channel_id': str(message.channel.id),
+                        'id': str(message.id),
+                        'author': {
+                            'username': message.author.name,
+                            'bot': message.author.bot
+                        }
+                    }
+                    
+                    # n8n fabric expert webhook URL
+                    n8n_webhook_url = "https://briefsubstance.app.n8n.cloud/webhook/fabric-expert"
+                    
+                    await session.post(n8n_webhook_url, json=payload)
+                    print(f"🧵 Forwarded fabric question to n8n: {message.content[:50]}...")
+            except Exception as e:
+                print(f"❌ Error forwarding to n8n: {e}")
+            return
+        
         # Check if bot is mentioned (respond anywhere when mentioned)
         if bot.user.mentioned_in(message):
             
