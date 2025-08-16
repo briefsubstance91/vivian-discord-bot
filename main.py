@@ -22,6 +22,8 @@ from googleapiclient.errors import HttpError
 import traceback
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Load environment variables
 load_dotenv()
@@ -96,7 +98,9 @@ CALENDAR_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/calendar'
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/spreadsheets.readonly'
 ]
 
 # Validate critical environment variables
@@ -117,6 +121,9 @@ try:
     intents = discord.Intents.default()
     intents.message_content = True
     bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
+    
+    # Scheduler for automated briefings
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone('America/Toronto'))
 except Exception as e:
     print(f"❌ CRITICAL: Discord bot initialization failed: {e}")
     exit(1)
@@ -1054,6 +1061,31 @@ async def on_ready():
     # Initialize Google services (call again in case of startup timing issues)
     initialize_google_services()
     
+    # Initialize scheduler for automated briefings
+    try:
+        # Schedule work briefing at 9:00 AM Toronto time (weekdays only)
+        scheduler.add_job(
+            send_automated_work_briefing,
+            CronTrigger(hour=9, minute=0, timezone=pytz.timezone('America/Toronto')),
+            id='daily_work_briefing',
+            replace_existing=True
+        )
+        
+        # Schedule work review at 4:30 PM Toronto time (weekdays only)
+        scheduler.add_job(
+            send_automated_work_review,
+            CronTrigger(hour=16, minute=30, timezone=pytz.timezone('America/Toronto')),
+            id='daily_work_review',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        print("⏰ Automated work briefings scheduled:")
+        print("  • Morning: 9:00 AM Toronto time (Mon-Fri)")
+        print("  • Review: 4:30 PM Toronto time (Mon-Fri)")
+    except Exception as e:
+        print(f"⚠️ Failed to start scheduler: {e}")
+    
     # Final status
     print(f"📅 Work Calendar Service: {'✅ Ready' if accessible_calendars else '❌ Not available'}")
     print(f"✅ {ASSISTANT_NAME} is online!")
@@ -1156,8 +1188,44 @@ def get_vivian_report(events=None, brief=False):
 # ============================================================================
 
 def read_briefing_notes():
-    """Read the current briefing notes from file"""
+    """Read the current briefing notes from Google Sheets or fallback to local file"""
     try:
+        # First try to read from Google Sheets if service is available
+        if calendar_service:  # Using same credentials as calendar
+            try:
+                drive_file_id = os.getenv('VIVIAN_DRIVE_FILE_ID', '1s42vLc5n3VildpkdVdBMyMNFPzBcXqggqlB4E758Nq4')
+                sheet_gid = os.getenv('VIVIAN_SHEET_GID', '747232342')  # Default to the gid from your URL
+                
+                if drive_file_id:
+                    # Build Google Sheets service using same credentials
+                    from googleapiclient.discovery import build
+                    oauth_credentials = calendar_service._http.credentials
+                    sheets_service = build('sheets', 'v4', credentials=oauth_credentials)
+                    
+                    # Read the specific sheet (using the gid to determine sheet name or index)
+                    # For now, we'll read the first sheet - you can specify sheet name if needed
+                    range_name = 'A:Z'  # Read all columns
+                    
+                    result = sheets_service.spreadsheets().values().get(
+                        spreadsheetId=drive_file_id,
+                        range=range_name
+                    ).execute()
+                    
+                    values = result.get('values', [])
+                    
+                    if values:
+                        # Convert spreadsheet data to formatted text
+                        content = format_spreadsheet_to_briefing(values)
+                        print("✅ Briefing notes loaded from Google Sheets")
+                        return content
+                    else:
+                        print("⚠️ Google Sheets is empty")
+                        
+            except Exception as drive_error:
+                print(f"⚠️ Google Sheets read failed: {drive_error}")
+                print("🔄 Falling back to local file...")
+        
+        # Fallback to local file (existing behavior)
         import os
         script_dir = os.path.dirname(os.path.abspath(__file__))
         notes_file = os.path.join(script_dir, "vivian_work_briefings.txt")
@@ -1165,12 +1233,45 @@ def read_briefing_notes():
         if os.path.exists(notes_file):
             with open(notes_file, 'r', encoding='utf-8') as file:
                 content = file.read()
+            print("✅ Briefing notes loaded from local file")
             return content
         else:
             return "📋 **Briefing Notes:** File not found. Please ensure briefing notes are available."
             
     except Exception as e:
         return f"📋 **Briefing Notes:** Error reading file - {str(e)}"
+
+def format_spreadsheet_to_briefing(values):
+    """Convert Google Sheets data to briefing format"""
+    try:
+        formatted_content = []
+        
+        for i, row in enumerate(values):
+            if not row:  # Skip empty rows
+                continue
+                
+            # If first column has content, treat as a section header or main content
+            if len(row) > 0 and row[0].strip():
+                # Check if it looks like a header (starts with ##, has emoji, etc.)
+                first_cell = row[0].strip()
+                
+                if first_cell.startswith('##') or any(emoji in first_cell for emoji in ['🎯', '📋', '📊', '💬', '🚀', '💡']):
+                    # This is a section header
+                    formatted_content.append(f"\n{first_cell}")
+                else:
+                    # This is regular content
+                    formatted_content.append(f"• {first_cell}")
+            
+            # Add additional columns as sub-items if they exist
+            if len(row) > 1:
+                for col_idx, cell in enumerate(row[1:], 1):
+                    if cell and cell.strip():
+                        formatted_content.append(f"  - {cell.strip()}")
+        
+        return '\n'.join(formatted_content) if formatted_content else "📋 **Briefing Notes:** No content found in spreadsheet"
+        
+    except Exception as e:
+        return f"📋 **Briefing Notes:** Error formatting spreadsheet data - {str(e)}"
 
 def get_work_calendar_summary():
     """Get today's work calendar summary"""
@@ -1891,14 +1992,22 @@ async def on_command_error(ctx, error):
 # ============================================================================
 
 async def send_automated_work_briefing():
-    """Automatically send 9 AM work briefing to specific channel"""
+    """Automatically send 9 AM work briefing to specific channel (weekdays only)"""
     try:
-        # Target specific channel by ID (you'll need to set this to your desired channel)
+        # Check if it's a weekday (Monday=0, Sunday=6)
+        toronto_tz = pytz.timezone('America/Toronto')
+        current_day = datetime.now(toronto_tz).weekday()
+        
+        if current_day >= 5:  # Saturday=5, Sunday=6
+            print(f"🌅 Skipping automated work briefing - weekend detected")
+            return
+        
+        # Target specific channel by ID
         target_channel_id = 1400672908610769027  # Update this to your target channel ID
         target_channel = bot.get_channel(target_channel_id)
         
         if target_channel:
-            print(f"🌅 Automated work briefing - sending to #{target_channel.name}")
+            print(f"🌅 Automated work briefing (weekday) - sending to #{target_channel.name}")
             
             # Generate the comprehensive briefing embeds
             briefing_embeds = generate_work_briefing_embeds(briefing_type="morning")
@@ -1918,14 +2027,22 @@ async def send_automated_work_briefing():
         print(f"❌ Automated work briefing error: {e}")
 
 async def send_automated_work_review():
-    """Automatically send 4:45 PM work review to specific channel"""
+    """Automatically send 4:30 PM work review to specific channel (weekdays only)"""
     try:
-        # Target specific channel by ID (you'll need to set this to your desired channel)
+        # Check if it's a weekday (Monday=0, Sunday=6)
+        toronto_tz = pytz.timezone('America/Toronto')
+        current_day = datetime.now(toronto_tz).weekday()
+        
+        if current_day >= 5:  # Saturday=5, Sunday=6
+            print(f"🌆 Skipping automated work review - weekend detected")
+            return
+        
+        # Target specific channel by ID
         target_channel_id = 1400672908610769027  # Update this to your target channel ID
         target_channel = bot.get_channel(target_channel_id)
         
         if target_channel:
-            print(f"🌆 Automated work review - sending to #{target_channel.name}")
+            print(f"🌆 Automated work review (weekday) - sending to #{target_channel.name}")
             
             # Generate the review briefing embeds
             review_embeds = generate_work_briefing_embeds(briefing_type="review")
