@@ -135,13 +135,14 @@ except Exception as e:
     print(f"❌ CRITICAL: OpenAI client initialization failed: {e}")
     exit(1)
 
-# Google Calendar setup (OAuth2 like Rose, calendar only)
+# Google Calendar and Gmail setup (OAuth2 like Rose)
 calendar_service = None
+gmail_service = None
 accessible_calendars = []
 
 def initialize_google_services():
-    """Initialize Google Calendar service using OAuth2 credentials (work calendar only)"""
-    global calendar_service, accessible_calendars
+    """Initialize Google Calendar and Gmail services using OAuth2 credentials"""
+    global calendar_service, gmail_service, accessible_calendars
     
     print("🔧 Initializing Google Calendar with OAuth2...")
     
@@ -184,12 +185,14 @@ def initialize_google_services():
                 print("❌ OAuth credentials are invalid")
             return False
         
-        # Initialize calendar service only
+        # Initialize calendar and Gmail services
         calendar_service = build('calendar', 'v3', credentials=oauth_credentials)
-        print("✅ OAuth Calendar service initialized")
+        gmail_service = build('gmail', 'v1', credentials=oauth_credentials)
+        print("✅ OAuth Calendar and Gmail services initialized")
         
-        # Test work calendar access only
+        # Test work calendar and Gmail access
         test_work_calendar_access()
+        test_gmail_access()
         
         return True
         
@@ -231,6 +234,27 @@ def test_work_calendar_access():
     
     print(f"📅 Work calendar accessible: {'✅ Yes' if accessible_calendars else '❌ No'}")
 
+def test_gmail_access():
+    """Test Gmail API access"""
+    global gmail_service
+    
+    if not gmail_service:
+        return
+    
+    try:
+        # Test Gmail access by getting user profile
+        profile = gmail_service.users().getProfile(userId='me').execute()
+        email_address = profile.get('emailAddress', 'Unknown')
+        print(f"✅ 📧 Gmail accessible: {email_address}")
+        
+        # Test inbox access
+        messages = gmail_service.users().messages().list(userId='me', maxResults=1).execute()
+        message_count = messages.get('resultSizeEstimate', 0)
+        print(f"✅ 📧 Gmail inbox accessible: {message_count} messages")
+        
+    except Exception as e:
+        print(f"❌ 📧 Gmail: Error testing access - {e}")
+
 # Initialize Google services on startup
 initialize_google_services()
 
@@ -240,6 +264,96 @@ processing_messages = set()
 last_response_time = {}
 
 print(f"💼 Starting {ASSISTANT_NAME} - {ASSISTANT_ROLE}...")
+
+# ============================================================================
+# EMAIL AND CALENDAR FUNCTIONS (Vivian's Specialty)
+# ============================================================================
+
+def get_priority_emails(max_emails=5):
+    """Get priority emails for briefing - unread, important, recent"""
+    if not gmail_service:
+        return "📧 **Priority Emails:** Gmail integration not available"
+    
+    try:
+        # Search for unread emails from today
+        import datetime
+        today = datetime.datetime.now().strftime('%Y/%m/%d')
+        
+        # Query for recent unread emails
+        query = f'is:unread after:{today}'
+        
+        messages_result = gmail_service.users().messages().list(
+            userId='me',
+            q=query,
+            maxResults=max_emails
+        ).execute()
+        
+        messages = messages_result.get('messages', [])
+        
+        if not messages:
+            return "📧 **Priority Emails:** No unread emails today"
+        
+        email_summaries = []
+        for msg in messages[:max_emails]:
+            try:
+                message = gmail_service.users().messages().get(
+                    userId='me',
+                    id=msg['id'],
+                    format='metadata',
+                    metadataHeaders=['From', 'Subject', 'Date']
+                ).execute()
+                
+                headers = message['payload'].get('headers', [])
+                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+                sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+                
+                # Clean up sender name
+                if '<' in sender:
+                    sender = sender.split('<')[0].strip()
+                
+                # Truncate long subjects
+                if len(subject) > 50:
+                    subject = subject[:47] + "..."
+                
+                email_summaries.append(f"• **{sender}:** {subject}")
+                
+            except Exception as e:
+                print(f"❌ Error reading email {msg['id']}: {e}")
+                continue
+        
+        if email_summaries:
+            header = f"📧 **Priority Emails:** {len(email_summaries)} unread today"
+            return header + "\n\n" + "\n".join(email_summaries)
+        else:
+            return "📧 **Priority Emails:** No unread emails today"
+            
+    except Exception as e:
+        print(f"❌ Gmail error: {e}")
+        return "📧 **Priority Emails:** Error retrieving email data"
+
+def get_email_metrics():
+    """Get email metrics for briefing context"""
+    if not gmail_service:
+        return "📊 **Email Metrics:** Gmail integration not available"
+    
+    try:
+        # Get inbox info
+        profile = gmail_service.users().getProfile(userId='me').execute()
+        total_messages = profile.get('messagesTotal', 0)
+        
+        # Get unread count
+        unread_result = gmail_service.users().messages().list(
+            userId='me',
+            q='is:unread',
+            maxResults=1
+        ).execute()
+        unread_count = unread_result.get('resultSizeEstimate', 0)
+        
+        return f"📊 **Email Status:** {unread_count} unread of {total_messages} total messages"
+        
+    except Exception as e:
+        print(f"❌ Email metrics error: {e}")
+        return "📊 **Email Status:** Error retrieving email metrics"
 
 # ============================================================================
 # WORK CALENDAR FUNCTIONS (Vivian's Specialty)
@@ -495,7 +609,11 @@ def get_work_morning_briefing():
         else:
             tomorrow_preview = "💼 **Tomorrow's Work Preview:** Clear schedule"
         
-        briefing = f"🌅 **Good Morning! Work Briefing for {current_time}**\n\n{today_schedule}\n\n{tomorrow_preview}"
+        # Get email context for briefing
+        email_metrics = get_email_metrics()
+        priority_emails = get_priority_emails(3)
+        
+        briefing = f"🌅 **Good Morning! Work Briefing for {current_time}**\n\n{today_schedule}\n\n{tomorrow_preview}\n\n{email_metrics}\n\n{priority_emails}"
         
         return briefing
         
@@ -784,6 +902,14 @@ async def handle_vivian_functions_enhanced(run, thread_id):
                     output += f"\n🤝 **Rose Integration:** Data exported for executive briefing"
                 else:
                     output = f"❌ **Export Failed:** {export_data['message']}"
+                    
+            # EMAIL FUNCTIONS
+            elif function_name == "get_priority_emails":
+                max_emails = arguments.get('max_emails', 5)
+                output = get_priority_emails(max_emails)
+                
+            elif function_name == "get_email_metrics":
+                output = get_email_metrics()
             
             # PR RESEARCH FUNCTIONS
             elif function_name == "pr_research":
@@ -1088,9 +1214,11 @@ async def on_ready():
     
     # Final status
     print(f"📅 Work Calendar Service: {'✅ Ready' if accessible_calendars else '❌ Not available'}")
+    print(f"📧 Gmail Service: {'✅ Ready' if gmail_service else '❌ Not available'}")
     print(f"✅ {ASSISTANT_NAME} is online!")
     print(f"🤖 Connected as {bot.user.name}#{bot.user.discriminator} (ID: {bot.user.id})")
     print(f"📅 Work Calendar Status: {'✅ Integrated' if accessible_calendars else '❌ Disabled'}")
+    print(f"📧 Gmail Status: {'✅ Integrated' if gmail_service else '❌ Disabled'}")
     print(f"🔍 PR Research: {'✅ Available' if BRAVE_API_KEY else '⚠️ Limited'}")
     print(f"🎯 Allowed Channels: {', '.join(ALLOWED_CHANNELS)}")
     
@@ -1563,11 +1691,16 @@ async def help_command(ctx):
         calendar_commands = [
             "!workbriefing - 🌅 Comprehensive 9 AM work briefing with strategic context",
             "!workreview - 🌆 End-of-day 4:45 PM review and tomorrow's prep",
-            "!work-briefing - Work morning briefing with PR context",
+            "!work-briefing - Work morning briefing with PR context and email summary",
             "!work-today - Today's work schedule", 
             "!work-upcoming [days] - Upcoming work events (default: 7)",
             "!work-schedule [timeframe] - Flexible work schedule view",
             "!work-agenda - Comprehensive work agenda overview"
+        ]
+        
+        email_commands = [
+            "!priority-emails - Show unread priority emails",
+            "!email-status - Email metrics and inbox overview"
         ]
         
         pr_commands = [
@@ -1590,6 +1723,12 @@ async def help_command(ctx):
         embed.add_field(
             name="📅 Work Calendar & Scheduling",
             value="\n".join([f"• {cmd}" for cmd in calendar_commands]),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📧 Email Management",
+            value="\n".join([f"• {cmd}" for cmd in email_commands]),
             inline=False
         )
         
@@ -1652,11 +1791,12 @@ async def status_command(ctx):
             inline=True
         )
         
-        # Work Calendar Integration
+        # Work Calendar & Email Integration
         calendar_status = '✅' if accessible_calendars else '❌'
+        gmail_status = '✅' if gmail_service else '❌'
         embed.add_field(
-            name="📅 Work Calendar Integration",
-            value=f"{calendar_status} Calendar Service\n{'✅' if GMAIL_WORK_CALENDAR_ID else '❌'} Work Calendar ID\n💼 Work Calendar Focus Only",
+            name="📅 Calendar & Email Integration",
+            value=f"{calendar_status} Calendar Service\n{gmail_status} Gmail Service\n{'✅' if GMAIL_WORK_CALENDAR_ID else '❌'} Work Calendar ID",
             inline=True
         )
         
@@ -2060,6 +2200,31 @@ async def send_automated_work_review():
             
     except Exception as e:
         print(f"❌ Automated work review error: {e}")
+
+@bot.command(name='priority-emails')
+async def priority_emails_command(ctx, max_emails: int = 5):
+    """Show priority unread emails command"""
+    
+    try:
+        async with ctx.typing():
+            max_emails = max(1, min(max_emails, 10))  # Limit between 1-10
+            emails = get_priority_emails(max_emails)
+            await ctx.send(emails)
+    except Exception as e:
+        print(f"❌ Priority emails command error: {e}")
+        await ctx.send("📧 Priority emails unavailable. Please try again.")
+
+@bot.command(name='email-status')
+async def email_status_command(ctx):
+    """Show email metrics and status"""
+    
+    try:
+        async with ctx.typing():
+            metrics = get_email_metrics()
+            await ctx.send(metrics)
+    except Exception as e:
+        print(f"❌ Email status command error: {e}")
+        await ctx.send("📧 Email status unavailable. Please try again.")
 
 @bot.command(name='links')
 async def links_command(ctx):
